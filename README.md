@@ -25,34 +25,25 @@ roda na **sua VPS** em Docker, atrás do Nginx, num subdomínio com HTTPS.
 
 ## 2. Publicar na VPS (Linux)
 
-Pré-requisitos no servidor: **Docker** (com o plugin `compose`), **Nginx** e **Certbot**. O site que já existe na VPS não
-é afetado: o app escuta só em `127.0.0.1:3010` e o Nginx o publica no subdomínio.
+Na VPS (Debian/Ubuntu), logado com um usuário que tenha `sudo`:
 
 ```bash
-# 1) DNS: crie um registro A  frotas.SEUDOMINIO.com.br -> IP da VPS
-
-# 2) código
-sudo mkdir -p /opt/frotas && sudo chown $USER /opt/frotas
-git clone <url-do-repositório> /opt/frotas && cd /opt/frotas
-cp .env.example .env && nano .env          # chaves do Supabase + CRON_SECRET (openssl rand -hex 32)
-
-# 3) app
-docker compose up -d --build
-curl -I http://127.0.0.1:3010/login        # deve responder 200
-
-# 4) Nginx + HTTPS
-sudo cp deploy/nginx/frotas.conf /etc/nginx/sites-available/frotas.conf
-sudo sed -i 's/frotas.SEUDOMINIO.com.br/frotas.seudominio.com.br/g' /etc/nginx/sites-available/frotas.conf
-sudo ln -s /etc/nginx/sites-available/frotas.conf /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
-sudo certbot --nginx -d frotas.seudominio.com.br
-
-# 5) alertas diários de revisão
-crontab -e                                  # cole a linha de deploy/crontab.txt (com seu CRON_SECRET e domínio)
+curl -fsSL https://raw.githubusercontent.com/ezequiaslucas6-rgb/Frotas-ve-culos/claude/amazing-ptolemy-j5zi8z/deploy/instalar-vps.sh -o instalar-vps.sh
+bash instalar-vps.sh                 # 1ª vez: instala o que faltar e cria /opt/frotas/.env
+nano /opt/frotas/.env                # cole as 3 chaves do Supabase
+bash /opt/frotas/deploy/instalar-vps.sh   # 2ª vez: sobe o app, Nginx/Apache, HTTPS e cron
 ```
 
-**Atualizar depois:** `cd /opt/frotas && ./deploy/atualizar.sh` (puxa o código, reconstrói e reinicia).
-**Logs:** `docker compose logs -f frotas`.
+O script (`deploy/instalar-vps.sh`) é idempotente — rodar de novo **atualiza** o app. Ele:
+instala Docker se faltar · cria swap de 2 GB se a memória for curta para o build · baixa o código em `/opt/frotas` ·
+gera o `CRON_SECRET` · sobe o container só em `127.0.0.1:3010` (o site que já existe na VPS não é afetado) · detecta o
+servidor web (Nginx, Apache ou nenhum → instala Nginx) e cria o site de `frotas.209.50.240.59.sslip.io` · emite o HTTPS
+(Let's Encrypt, renovação automática) · agenda os alertas diários.
+
+Subdomínio: `*.sslip.io` aponta sozinho para o IP do nome, sem configurar DNS. Para usar outro domínio:
+`DOMINIO=frotas.seudominio.com.br bash /opt/frotas/deploy/instalar-vps.sh` (com o registro A apontando para a VPS).
+
+**Logs:** `sudo docker compose -f /opt/frotas/docker-compose.yml logs -f`.
 
 | Variável (`.env`) | Uso |
 |---|---|
