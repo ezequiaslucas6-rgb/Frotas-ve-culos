@@ -1,16 +1,17 @@
 /**
  * Tipos do banco no formato de `supabase gen types typescript`.
- * Mantidos à mão para refletir supabase/migrations/20260101000000_init.sql.
+ * Mantidos à mão para refletir supabase/migrations/*.sql.
  * Após mudanças no schema, você pode regenerá-los com:
  *   npx supabase gen types typescript --project-id <id> > src/types/database.ts
  */
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
-type UserRole = 'admin' | 'supervisor';
+type UserRole = 'admin' | 'supervisor' | 'motorista';
 type MotoristaStatus = 'ativo' | 'inativo' | 'afastado' | 'ferias';
 type ChecklistStatus = 'ok' | 'atencao' | 'critico';
 type ManutencaoTipo = 'preventiva' | 'corretiva';
 type AlertaStatus = 'ok' | 'proximo' | 'vencido';
+type Combustivel = 'gasolina' | 'gasolina_aditivada' | 'etanol' | 'diesel_s10' | 'diesel_s500' | 'gnv';
 type CategoriaFoto =
   | 'lateral_direita'
   | 'lateral_esquerda'
@@ -28,7 +29,14 @@ type CategoriaFoto =
   | 'luzes_sinalizacao';
 
 type FilialRow = { id: string; nome_cidade: string; uf: string; created_at: string };
-type ProfileRow = { id: string; nome: string; role: UserRole; filial_id: string | null; created_at: string };
+type ProfileRow = {
+  id: string;
+  nome: string;
+  role: UserRole;
+  filial_id: string | null;
+  avatar_url: string | null;
+  created_at: string;
+};
 type MotoristaRow = {
   id: string;
   filial_id: string;
@@ -39,6 +47,16 @@ type MotoristaRow = {
   cnh: string;
   status: MotoristaStatus;
   created_at: string;
+  user_id: string | null;
+  cnh_categoria: string | null;
+  cnh_validade: string | null;
+  cnh_primeira_habilitacao: string | null;
+  cnh_emissao: string | null;
+  cnh_uf: string | null;
+  cnh_ear: boolean;
+  cnh_observacoes: string | null;
+  cnh_frente_url: string | null;
+  cnh_verso_url: string | null;
 };
 type VeiculoRow = {
   id: string;
@@ -55,6 +73,7 @@ type VeiculoRow = {
   proxima_revisao_km: number | null;
   proxima_revisao_data: string | null;
   created_at: string;
+  motorista_id: string | null;
 };
 type ChecklistRow = {
   id: string;
@@ -115,6 +134,26 @@ type VeiculoPainelRow = {
   ultimo_checklist_em: string | null;
   ultima_corretiva_em: string | null;
   ultima_preventiva_id: string | null;
+  motorista_id: string | null;
+  motorista_nome: string | null;
+};
+type AbastecimentoRow = {
+  id: string;
+  veiculo_id: string;
+  filial_id: string;
+  motorista_id: string | null;
+  registrado_por: string | null;
+  data_abastecimento: string;
+  km: number;
+  litros: number;
+  valor_total: number;
+  preco_litro: number;
+  combustivel: Combustivel;
+  tanque_cheio: boolean;
+  posto: string | null;
+  comprovante_url: string | null;
+  observacao: string | null;
+  created_at: string;
 };
 
 /** Insert: campos obrigatórios (K) + demais opcionais. */
@@ -156,6 +195,13 @@ export type Database = {
             referencedRelation: 'filiais';
             referencedColumns: ['id'];
           },
+          {
+            foreignKeyName: 'motoristas_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: true;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
         ];
       };
       veiculos: {
@@ -169,6 +215,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: 'filiais';
             referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'veiculos_motorista_fk';
+            columns: ['motorista_id', 'filial_id'];
+            isOneToOne: false;
+            referencedRelation: 'motoristas';
+            referencedColumns: ['id', 'filial_id'];
           },
         ];
       };
@@ -242,6 +295,41 @@ export type Database = {
           },
         ];
       };
+      abastecimentos: {
+        Row: AbastecimentoRow;
+        Insert: Ins<AbastecimentoRow, 'veiculo_id' | 'filial_id' | 'km' | 'litros' | 'valor_total' | 'combustivel'>;
+        Update: Partial<Omit<AbastecimentoRow, 'preco_litro'>>;
+        Relationships: [
+          {
+            foreignKeyName: 'abastecimentos_filial_fk';
+            columns: ['filial_id'];
+            isOneToOne: false;
+            referencedRelation: 'filiais';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'abastecimentos_veiculo_fk';
+            columns: ['veiculo_id', 'filial_id'];
+            isOneToOne: false;
+            referencedRelation: 'veiculos';
+            referencedColumns: ['id', 'filial_id'];
+          },
+          {
+            foreignKeyName: 'abastecimentos_motorista_fk';
+            columns: ['motorista_id', 'filial_id'];
+            isOneToOne: false;
+            referencedRelation: 'motoristas';
+            referencedColumns: ['id', 'filial_id'];
+          },
+          {
+            foreignKeyName: 'abastecimentos_registrado_por_fkey';
+            columns: ['registrado_por'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
     };
     Views: {
       vw_veiculos_painel: { Row: VeiculoPainelRow; Relationships: [] };
@@ -258,6 +346,10 @@ export type Database = {
         };
         Returns: string;
       };
+      atualizar_meu_perfil: {
+        Args: { p_nome: string | null; p_avatar_url: string | null };
+        Returns: undefined;
+      };
     };
     Enums: {
       user_role: UserRole;
@@ -266,6 +358,7 @@ export type Database = {
       manutencao_tipo: ManutencaoTipo;
       alerta_status: AlertaStatus;
       categoria_foto: CategoriaFoto;
+      combustivel: Combustivel;
     };
     CompositeTypes: { [_ in never]: never };
   };

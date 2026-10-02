@@ -13,7 +13,10 @@ export default async function EditarVeiculoPage({ params }: { params: Promise<{ 
   const { data: veiculo } = await supabase.from('veiculos').select('*').eq('id', id).maybeSingle();
   if (!veiculo) notFound();
 
-  const urls = await signedUrlMap(supabase, 'veiculos', [veiculo.foto_geral_url, veiculo.documento_url]);
+  const [urls, { data: motoristas }] = await Promise.all([
+    signedUrlMap(supabase, 'veiculos', [veiculo.foto_geral_url, veiculo.documento_url]),
+    supabase.from('motoristas').select('id, nome, filial_id, status, user_id').eq('filial_id', veiculo.filial_id).order('nome'),
+  ]);
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
@@ -24,6 +27,7 @@ export default async function EditarVeiculoPage({ params }: { params: Promise<{ 
         veiculo={veiculo}
         fotoUrl={veiculo.foto_geral_url ? urls[veiculo.foto_geral_url] : null}
         documentoUrl={veiculo.documento_url ? urls[veiculo.documento_url] : null}
+        motoristas={motoristas ?? []}
       />
     </div>
   );

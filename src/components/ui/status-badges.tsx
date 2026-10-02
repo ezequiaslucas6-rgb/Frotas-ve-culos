@@ -1,6 +1,8 @@
-import { CircleAlert, CircleCheck, TriangleAlert, Wrench } from 'lucide-react';
+import { CircleAlert, CircleCheck, CircleHelp, TriangleAlert, Wrench } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { formatDateISO } from '@/lib/format';
 import type { NivelAlerta, SaudeVeiculo } from '@/lib/maintenance/alerts';
+import { descreverSituacaoCnh, type SituacaoCnh } from '@/lib/motoristas/cnh';
 import type { Enums } from '@/types/database';
 
 /** Semáforo da frota: Verde = Liberado, Amarelo = Atenção, Vermelho = Manutenção/Avaria. */
@@ -58,4 +60,34 @@ export function MotoristaStatusBadge({ status }: { status: Enums<'motorista_stat
   } as const;
   const [variant, label] = map[status];
   return <Badge variant={variant}>{label}</Badge>;
+}
+
+/** Situação da CNH pela validade; `detalhe` acrescenta a data/prazo ao texto. */
+export function CnhBadge({ situacao, detalhe = false }: { situacao: SituacaoCnh; detalhe?: boolean }) {
+  switch (situacao.nivel) {
+    case 'sem_dados':
+      return (
+        <Badge variant="secondary">
+          <CircleHelp /> CNH sem validade
+        </Badge>
+      );
+    case 'vencida':
+      return (
+        <Badge variant="danger">
+          <CircleAlert /> CNH vencida{detalhe ? ` · ${formatDateISO(situacao.validade)}` : ''}
+        </Badge>
+      );
+    case 'vence':
+      return (
+        <Badge variant="warning">
+          <TriangleAlert /> CNH: {descreverSituacaoCnh(situacao).toLowerCase()}
+        </Badge>
+      );
+    case 'ok':
+      return (
+        <Badge variant="success">
+          <CircleCheck /> CNH válida{detalhe ? ` até ${formatDateISO(situacao.validade)}` : ''}
+        </Badge>
+      );
+  }
 }

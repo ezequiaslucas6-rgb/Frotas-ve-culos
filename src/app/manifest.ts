@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: 'Gestão de Frotas',
     short_name: 'Frotas',
     description: 'Checklists fotográficos, manutenção e controle de frota por filial.',
-    start_url: '/dashboard',
+    start_url: '/',
     scope: '/',
     display: 'standalone',
     orientation: 'portrait',

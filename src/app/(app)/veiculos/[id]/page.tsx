@@ -1,14 +1,16 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { CalendarClock, ClipboardCheck, ExternalLink, FileText, Gauge, Pencil, Plus, Truck, Wrench } from 'lucide-react';
+import { CalendarClock, ClipboardCheck, ExternalLink, FileText, Fuel, Gauge, Pencil, Plus, Truck, UserRound, Wrench } from 'lucide-react';
 import { excluirVeiculo } from '@/actions/veiculos';
+import { ListaAbastecimentos } from '@/components/abastecimentos/lista-abastecimentos';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DeleteButton } from '@/components/ui/delete-button';
 import { EmptyState, PageHeader } from '@/components/ui/page-header';
 import { AlertaBadge, ChecklistStatusBadge, SaudeBadge } from '@/components/ui/status-badges';
+import { calcularConsumo, formatKmL } from '@/lib/abastecimento/consumo';
 import { requireSession } from '@/lib/auth';
 import { formatBRL, formatDateISO, formatDateTime, formatFilial, formatKm } from '@/lib/format';
 import { avaliarVeiculoPainel } from '@/lib/maintenance/alerts';
@@ -26,7 +28,7 @@ export default async function VeiculoPage({ params }: { params: Promise<{ id: st
   if (!raw) notFound();
   const v = { ...raw, ...avaliarVeiculoPainel(raw) };
 
-  const [{ data: checklists }, { data: manutencoes }, urls] = await Promise.all([
+  const [{ data: checklists }, { data: manutencoes }, urls, { data: abastecimentos }] = await Promise.all([
     supabase
       .from('checklists')
       .select('id, data_envio, status, km_registro, motoristas(nome)')
@@ -40,7 +42,15 @@ export default async function VeiculoPage({ params }: { params: Promise<{ id: st
       .order('data_manutencao', { ascending: false })
       .limit(8),
     signedUrlMap(supabase, 'veiculos', [raw.foto_geral_url, raw.documento_url]),
+    supabase
+      .from('abastecimentos')
+      .select('id, data_abastecimento, km, litros, valor_total, preco_litro, combustivel, tanque_cheio, posto, comprovante_url, motoristas(nome)')
+      .eq('veiculo_id', id)
+      .order('km', { ascending: false })
+      .limit(30),
   ]);
+  const consumo = calcularConsumo(abastecimentos ?? []);
+  const urlsCupom = await signedUrlMap(supabase, 'abastecimentos', (abastecimentos ?? []).slice(0, 6).map((a) => a.comprovante_url));
 
   const fotoUrl = raw.foto_geral_url ? urls[raw.foto_geral_url] : undefined;
   const docUrl = raw.documento_url ? urls[raw.documento_url] : undefined;
@@ -128,6 +138,26 @@ export default async function VeiculoPage({ params }: { params: Promise<{ id: st
                 {v.proxima_revisao_km != null || v.proxima_revisao_data ? descreverAlerta(v.alerta, false) : 'Sem plano de revisão'}
                 {` · revisão a cada ${formatKm(v.intervalo_revisao_km)} ou ${v.intervalo_revisao_dias} dias`}
               </div>
+              <div>
+                <dt className="flex items-center gap-1 text-muted-foreground">
+                  <UserRound className="size-4" /> Motorista responsável
+                </dt>
+                <dd className="font-semibold">
+                  {v.motorista_id ? (
+                    <Link href={`/motoristas/${v.motorista_id}`} className="hover:text-primary hover:underline">
+                      {v.motorista_nome}
+                    </Link>
+                  ) : (
+                    <span className="font-normal text-muted-foreground">Não definido</span>
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt className="flex items-center gap-1 text-muted-foreground">
+                  <Fuel className="size-4" /> Consumo médio
+                </dt>
+                <dd className="font-semibold">{formatKmL(consumo.media)}</dd>
+              </div>
             </dl>
           </CardContent>
         </Card>
@@ -196,6 +226,32 @@ export default async function VeiculoPage({ params }: { params: Promise<{ id: st
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader className="flex-row items-center justify-between">
+          <CardTitle>Abastecimentos</CardTitle>
+          <div className="flex gap-1">
+            <Link href={`/abastecimentos?veiculo=${v.id}`} className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
+              Ver todos
+            </Link>
+            <Link href={`/abastecimentos/novo?veiculo=${v.id}`} className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
+              <Plus /> Novo
+            </Link>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {(abastecimentos ?? []).length === 0 ? (
+            <EmptyState title="Nenhum abastecimento lançado" />
+          ) : (
+            <ListaAbastecimentos
+              itens={(abastecimentos ?? []).slice(0, 6)}
+              consumo={consumo.porLancamento}
+              urls={urlsCupom}
+              mostrarMotorista
+            />
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

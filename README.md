@@ -1,7 +1,8 @@
 # Gestão de Frotas
 
-Sistema multi-filial de gestão de frotas: **checklist fotográfico de 14 etapas** (celular), cadastro de motoristas e
-veículos, **alertas de manutenção por KM e por período**, controle de custos e painel executivo.
+Sistema multi-filial de gestão de frotas: **checklist fotográfico de 14 etapas** (celular), cadastro de motoristas (com
+**CNH completa e imagens**) e veículos, **acesso do motorista pelo celular** com **lançamento de abastecimentos**,
+**alertas de manutenção por KM e por período**, controle de custos (manutenção + combustível) e painel executivo.
 
 **Stack:** Next.js 16 (App Router, Server Actions) · TypeScript · Supabase (Postgres + Auth + Storage + RLS) · Tailwind CSS v4 ·
 roda na **sua VPS** em Docker, atrás do Nginx, num subdomínio com HTTPS.
@@ -11,8 +12,14 @@ roda na **sua VPS** em Docker, atrás do Nginx, num subdomínio com HTTPS.
 ---
 
 ## 1. Supabase (uma vez)
-1. **SQL Editor** → execute, nesta ordem, `supabase/migrations/20260101000000_init.sql` e
-   `supabase/migrations/20260102000000_rascunhos.sql`.
+1. **SQL Editor** → execute os arquivos de `supabase/migrations/`, **um por vez e nesta ordem** (cada um numa execução
+   separada — clique em *Run*, limpe o editor, cole o próximo):
+   1. `20260101000000_init.sql`
+   2. `20260102000000_rascunhos.sql`
+   3. `20260103000000_papel_motorista.sql` (uma linha só; precisa rodar **sozinho**, antes do próximo)
+   4. `20260103000100_motoristas_acesso.sql`
+
+   **Já tinha o sistema instalado?** Rode apenas os itens 3 e 4 (nessa ordem, separados) e depois atualize o app na VPS.
 2. Execute `supabase/seed.sql` (filiais de exemplo).
 3. **Primeiro Administrador Geral (obrigatório).** Crie o usuário em *Authentication → Users → Add user* (marque
    *Auto Confirm User*) e vincule-o como admin:
@@ -20,7 +27,8 @@ roda na **sua VPS** em Docker, atrás do Nginx, num subdomínio com HTTPS.
    insert into public.profiles (id, nome, role, filial_id)
    select id, 'Administrador Geral', 'admin', null from auth.users where email = 'seu-email@empresa.com';
    ```
-   Sem essa linha o login funciona, mas o app responde *"Seu usuário ainda não foi habilitado"*.
+   Sem essa linha o login funciona, mas o app responde *"Seu usuário ainda não foi habilitado"*. O nome e a foto do
+   Administrador Geral podem ser trocados depois, no próprio app, em **Meu perfil** (clique no seu nome no topo).
 4. *Authentication → Providers → Email*: desative *"Allow new users to sign up"* (usuários são criados pelo Admin no app).
 
 ## 2. Publicar na VPS (Linux)
@@ -48,7 +56,7 @@ Subdomínio: `*.sslip.io` aponta sozinho para o IP do nome, sem configurar DNS. 
 | Variável (`.env`) | Uso |
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | navegador e servidor (sempre sob RLS). Embutidas no build: mudou? rode `docker compose up -d --build` |
-| `SUPABASE_SERVICE_ROLE_KEY` | **só servidor**: criar supervisores e o cron |
+| `SUPABASE_SERVICE_ROLE_KEY` | **só servidor**: criar supervisores, liberar/redefinir/remover o acesso de motoristas e o cron |
 | `CRON_SECRET` | protege `/api/cron/alertas` |
 | `FROTAS_PORTA` | porta local do container (padrão 3010) |
 
@@ -72,16 +80,44 @@ daltonismo nos dois temas e sempre aparecem com ícone + texto.
 
 ## Modelo de acesso (RBAC + RLS)
 
-| | Admin Geral | Supervisor |
-|---|---|---|
-| Filiais | CRUD de todas | lê somente a própria |
-| Veículos / Motoristas / Manutenções | CRUD global | lê, cria e edita **somente da própria filial** |
-| Checklists | CRUD global | lê e cria da própria filial (imutáveis após o envio) |
-| Exclusões | sim | não (para desligar um motorista: status *Inativo*) |
+| | Admin Geral | Supervisor | Motorista |
+|---|---|---|---|
+| Filiais | CRUD de todas | lê somente a própria | lê a própria |
+| Veículos | CRUD global | lê, cria e edita **da própria filial** | lê **só os veículos em que é o responsável** |
+| Motoristas (e CNH) | CRUD global | lê, cria e edita da própria filial | lê só o próprio cadastro |
+| Manutenções / custos | CRUD global | da própria filial | — |
+| Checklists | CRUD global | lê e cria da própria filial (imutáveis) | — |
+| Abastecimentos | todos; corrige e exclui | lê e lança da própria filial | lança nos próprios veículos; lê só os seus |
+| Exclusões | sim | não (para desligar um motorista: status *Inativo*) | não |
 
-O isolamento é garantido no banco: RLS em todas as tabelas, FKs compostas `(veiculo_id, filial_id)` que impedem referências
-entre filiais, `profiles` gravável só pelo Admin, Storage privado por pasta de filial e view com `security_invoker`. O
-`src/proxy.ts` revalida a sessão e barra rotas de admin; páginas e Server Actions revalidam — a RLS é a barreira final.
+O isolamento é garantido no banco: RLS em todas as tabelas, FKs compostas `(veiculo_id, filial_id)` e
+`(motorista_id, filial_id)` que impedem referências entre filiais, `profiles` gravável só pelo Admin (nome e foto mudam
+por uma função que altera só esses dois campos), Storage privado por pasta de filial e view com `security_invoker`. O
+`src/proxy.ts` revalida a sessão e libera para o motorista **somente** *Meu veículo*, *Abastecimentos* e *Meu perfil*;
+páginas e Server Actions revalidam — a RLS é a barreira final (testes em `supabase/tests/`).
+
+## Acesso do motorista
+
+1. Cadastre o motorista (com a **CNH**) e, na edição do veículo, escolha o **motorista responsável**.
+2. Abra o motorista → **Acesso ao app** → *Gerar* → **Liberar acesso**. O login é o e-mail do cadastro; anote a senha
+   provisória e repasse (ele pode trocá-la em *Meu perfil*). Supervisores liberam o acesso dos motoristas da própria filial.
+3. No celular o motorista vê **Meu veículo** (placa, KM, próxima revisão, documento CRLV, consumo médio e alerta da CNH) e
+   o botão central **Registrar abastecimento**.
+
+Motorista com status *Inativo* perde o acesso na hora. *Remover acesso* apaga o login e mantém o histórico.
+
+## Abastecimentos
+
+Lançados pelo motorista (ou pelo supervisor): data, KM do hodômetro, combustível, litros, valor, tanque cheio/parcial,
+posto e **foto do cupom**. O KM do veículo é atualizado automaticamente (nunca regride) e o app recusa KM menor que o
+último registrado no mesmo dia. O **consumo (km/l)** usa o método tanque cheio a tanque cheio (parciais somam ao ciclo
+seguinte). O painel passa a mostrar o **custo da frota = manutenção + combustível**.
+
+## CNH
+
+Seção própria no cadastro do motorista: nº de registro, categoria, validade, emissão, 1ª habilitação, UF, EAR e
+observações, com **fotos de frente e verso** (ou o PDF da CNH digital). Situação pela validade: 🔴 vencida ·
+🟡 vence em até 30 dias · 🟢 em dia — no painel (*CNH dos motoristas*), na lista de motoristas e no app do motorista.
 
 ## Checklist de 14 etapas
 Câmera nativa do celular, **compressão no aparelho** (fotos de 3–12 MB viram ~300 KB), upload direto ao Storage etapa a etapa
@@ -97,7 +133,9 @@ página. O envio final é uma RPC atômica (`salvar_checklist`) que grava checkl
 Semáforo: 🔴 Manutenção/Avaria · 🟡 Atenção · 🟢 Liberado (detalhes em `src/lib/maintenance/alerts.ts`).
 
 ## Limites conhecidos
-- Fotos de checklists abandonados ficam no Storage (supervisores não excluem arquivos); um job de limpeza pode vir depois.
+- Fotos de checklists abandonados, cupons trocados antes do envio e fotos de perfil antigas ficam no Storage
+  (usuários não excluem arquivos); um job de limpeza pode vir depois.
+- O checklist de 14 fotos continua sendo feito pelo supervisor; o motorista não registra checklists.
 - Sem fila offline: sem sinal, o envio falha com aviso e o rascunho preserva o que já subiu.
 - A tabela `checklist_rascunhos` (migration 20260102) foi criada para a versão Streamlit; a web guarda o rascunho no
   próprio aparelho e não a usa — pode ficar como está.

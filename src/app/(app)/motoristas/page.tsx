@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { MessageCircle, Pencil, Plus, Search, Users } from 'lucide-react';
+import { ChevronRight, MessageCircle, Pencil, Plus, Search, Smartphone, Users } from 'lucide-react';
 import { excluirMotorista } from '@/actions/motoristas';
 import { FilialFilter } from '@/components/filial-filter';
 import { Pagination } from '@/components/pagination';
@@ -8,9 +8,11 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { DeleteButton } from '@/components/ui/delete-button';
 import { Input } from '@/components/ui/input';
 import { EmptyState, PageHeader } from '@/components/ui/page-header';
-import { MotoristaStatusBadge } from '@/components/ui/status-badges';
+import { CnhBadge, MotoristaStatusBadge } from '@/components/ui/status-badges';
 import { requireSession } from '@/lib/auth';
+import { toISODate } from '@/lib/dates';
 import { formatFilial } from '@/lib/format';
+import { situacaoCnh } from '@/lib/motoristas/cnh';
 import { pageRange, parsePage, resolveFilialFilter, sanitizeSearch, type SearchParams } from '@/lib/pagination';
 import { formatCpf, formatWhatsapp, whatsappLink } from '@/lib/validators/documentos';
 
@@ -24,6 +26,7 @@ export default async function MotoristasPage({ searchParams }: { searchParams: P
   const q = sanitizeSearch(sp.q);
   const page = parsePage(sp.page);
   const { from, to } = pageRange(page);
+  const hoje = toISODate();
 
   let query = supabase
     .from('motoristas')
@@ -73,16 +76,26 @@ export default async function MotoristasPage({ searchParams }: { searchParams: P
           {(motoristas ?? []).map((m) => (
             <li key={m.id} className="flex flex-col gap-3 rounded-2xl bg-card p-4">
               <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="truncate font-semibold">{m.nome}</p>
+                <Link href={`/motoristas/${m.id}`} className="group min-w-0">
+                  <p className="flex items-center gap-1 truncate font-semibold group-hover:text-primary">
+                    {m.nome} <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                  </p>
                   <p className="truncate text-xs text-muted-foreground">
-                    CPF {formatCpf(m.cpf)} · CNH {m.cnh}
+                    CPF {formatCpf(m.cpf)}
+                    {m.cnh_categoria ? ` · CNH ${m.cnh_categoria}` : ''}
                     {isAdmin && m.filiais ? ` · ${formatFilial(m.filiais)}` : ''}
                   </p>
-                </div>
+                </Link>
                 <MotoristaStatusBadge status={m.status} />
               </div>
-              <p className="truncate text-sm text-muted-foreground">{m.email}</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <CnhBadge situacao={situacaoCnh(m.cnh_validade, hoje)} />
+                {m.user_id ? (
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                    <Smartphone className="size-3.5" /> Acesso ao app
+                  </span>
+                ) : null}
+              </div>
               <div className="flex flex-wrap items-center gap-2">
                 {/* Contato rápido: abre a conversa no WhatsApp (app nativo no celular, Web no desktop) */}
                 <a

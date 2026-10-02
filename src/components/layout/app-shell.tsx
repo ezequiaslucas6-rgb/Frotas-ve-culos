@@ -3,31 +3,27 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
-import { Camera, LogOut, Menu, Truck, X } from 'lucide-react';
+import { LogOut, Menu, Truck, UserRound, X } from 'lucide-react';
 import { signOut } from '@/actions/auth';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { NAV_ITEMS } from '@/lib/nav';
+import { ACAO_PRINCIPAL, BARRA_INFERIOR, itensDoPapel } from '@/lib/nav';
 import { cn } from '@/lib/utils';
+import type { Tables } from '@/types/database';
 
 interface AppShellProps {
   nome: string;
   papel: string;
+  role: Tables<'profiles'>['role'];
   filialLabel: string | null;
-  isAdmin: boolean;
+  avatarUrl: string | null;
   children: React.ReactNode;
 }
 
-const isActive = (pathname: string, href: string) =>
-  href === '/checklists' ? pathname === href || (pathname.startsWith('/checklists/') && !pathname.startsWith('/checklists/novo')) : pathname === href || pathname.startsWith(`${href}/`);
-
-const iniciais = (nome: string) =>
-  nome
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase())
-    .join('');
+/** Na tela da ação principal (ex.: /checklists/novo) só o botão de destaque fica ativo. */
+const isActive = (pathname: string, href: string, acaoHref: string) =>
+  !pathname.startsWith(acaoHref) && (pathname === href || pathname.startsWith(`${href}/`));
 
 function Logo({ className }: { className?: string }) {
   return (
@@ -37,38 +33,42 @@ function Logo({ className }: { className?: string }) {
   );
 }
 
-export function AppShell({ nome, papel, filialLabel, isAdmin, children }: AppShellProps) {
+export function AppShell({ nome, papel, role, filialLabel, avatarUrl, children }: AppShellProps) {
   const pathname = usePathname();
   // o menu guarda em qual rota foi aberto: navegar para outra rota o fecha
   const [menuPath, setMenuPath] = useState<string | null>(null);
   const menuOpen = menuPath === pathname;
-  const items = NAV_ITEMS.filter((i) => !i.adminOnly || isAdmin);
-  const bottomItems = items.filter((i) => ['/dashboard', '/veiculos', '/manutencoes'].includes(i.href));
+  const items = itensDoPapel(role);
+  const bottomItems = BARRA_INFERIOR[role].flatMap((href) => items.filter((i) => i.href === href));
+  const acao = ACAO_PRINCIPAL[role];
+  const AcaoIcon = acao.icon;
+  const home = items[0]?.href ?? '/';
+  const ativo = (href: string) => isActive(pathname, href, acao.href);
   const immersive = pathname.startsWith('/checklists/novo');
 
   return (
     <div className="min-h-dvh md:pl-[88px]">
       {/* Trilho lateral (desktop): só ícones, item ativo "encaixa" no conteúdo */}
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-[88px] flex-col items-center gap-8 bg-rail py-6 md:flex">
-        <Link href="/dashboard" aria-label="Início">
+        <Link href={home} aria-label="Início">
           <Logo />
         </Link>
         <nav className="flex flex-1 flex-col items-center gap-2" aria-label="Principal">
           {items.map(({ href, label, icon: Icon }) => {
-            const ativo = isActive(pathname, href);
+            const atual = ativo(href);
             return (
               <Link
                 key={href}
                 href={href}
                 aria-label={label}
-                aria-current={ativo ? 'page' : undefined}
+                aria-current={atual ? 'page' : undefined}
                 className={cn(
                   'group relative flex size-12 items-center justify-center rounded-xl text-white/60 transition-colors hover:bg-white/10 hover:text-white',
-                  ativo && 'bg-white/15 text-white',
+                  atual && 'bg-white/15 text-white',
                 )}
               >
                 <Icon className="size-[22px]" />
-                {ativo ? (
+                {atual ? (
                   <span aria-hidden className="absolute -right-[26px] size-4 rotate-45 rounded-[3px] bg-background" />
                 ) : null}
                 <span className="pointer-events-none absolute left-full ml-5 rounded-lg bg-foreground px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap text-background opacity-0 transition-opacity group-hover:opacity-100">
@@ -79,12 +79,12 @@ export function AppShell({ nome, papel, filialLabel, isAdmin, children }: AppShe
           })}
         </nav>
         <Link
-          href="/checklists/novo"
-          aria-label="Novo checklist"
-          title="Novo checklist"
+          href={acao.href}
+          aria-label={acao.label}
+          title={acao.label}
           className="flex size-12 items-center justify-center rounded-full bg-white text-rail transition-transform hover:scale-105"
         >
-          <Camera className="size-5" strokeWidth={2.4} />
+          <AcaoIcon className="size-5" strokeWidth={2.4} />
         </Link>
       </aside>
 
@@ -96,7 +96,7 @@ export function AppShell({ nome, papel, filialLabel, isAdmin, children }: AppShe
         )}
       >
         <div className="flex h-16 items-center gap-3">
-          <Link href="/dashboard" className="md:hidden" aria-label="Início">
+          <Link href={home} className="md:hidden" aria-label="Início">
             <Logo className="size-9 bg-rail text-white" />
           </Link>
           <div className="leading-tight">
@@ -106,9 +106,11 @@ export function AppShell({ nome, papel, filialLabel, isAdmin, children }: AppShe
         </div>
         <div className="flex items-center gap-1.5">
           <ThemeToggle />
-          <div className="ml-1 hidden items-center gap-3 rounded-xl bg-card py-1.5 pr-1.5 pl-3 md:flex">
-            <span className="text-sm font-medium">{nome}</span>
-            <span className="flex size-8 items-center justify-center rounded-lg bg-primary/20 text-xs font-bold text-primary">{iniciais(nome)}</span>
+          <div className="ml-1 hidden items-center gap-1 rounded-xl bg-card py-1.5 pr-1.5 pl-3 md:flex">
+            <Link href="/perfil" className="flex items-center gap-3 rounded-lg pr-1 hover:text-primary" title="Meu perfil">
+              <span className="text-sm font-medium">{nome}</span>
+              <Avatar nome={nome} url={avatarUrl} className="size-8 rounded-lg text-xs" />
+            </Link>
             <form action={signOut}>
               <Button type="submit" variant="ghost" size="icon" className="size-8" aria-label="Sair" title="Sair">
                 <LogOut className="size-4" />
@@ -127,18 +129,18 @@ export function AppShell({ nome, papel, filialLabel, isAdmin, children }: AppShe
       {!immersive ? (
         <nav aria-label="Navegação rápida" className="fixed inset-x-3 bottom-3 z-30 md:hidden">
           <div className="grid grid-cols-5 items-center rounded-2xl bg-card px-1 pb-safe shadow-[0_8px_30px_rgb(0_0_0/0.35)]">
-            {bottomItems.slice(0, 2).map(({ href, label, icon: Icon }) => (
-              <BottomLink key={href} href={href} label={label} ativo={isActive(pathname, href)} icon={<Icon className="size-5" />} />
+            {bottomItems.slice(0, 2).map(({ href, label, curto, icon: Icon }) => (
+              <BottomLink key={href} href={href} label={curto ?? label} ativo={ativo(href)} icon={<Icon className="size-5" />} />
             ))}
             <Link
-              href="/checklists/novo"
-              aria-label="Novo checklist"
+              href={acao.href}
+              aria-label={acao.label}
               className="mx-auto -mt-7 flex size-14 items-center justify-center rounded-full bg-rail text-white ring-4 ring-background"
             >
-              <Camera className="size-6" />
+              <AcaoIcon className="size-6" />
             </Link>
-            {bottomItems.slice(2).map(({ href, label, icon: Icon }) => (
-              <BottomLink key={href} href={href} label={label} ativo={isActive(pathname, href)} icon={<Icon className="size-5" />} />
+            {bottomItems.slice(2).map(({ href, label, curto, icon: Icon }) => (
+              <BottomLink key={href} href={href} label={curto ?? label} ativo={ativo(href)} icon={<Icon className="size-5" />} />
             ))}
             <button
               type="button"
@@ -158,31 +160,33 @@ export function AppShell({ nome, papel, filialLabel, isAdmin, children }: AppShe
           <button type="button" aria-label="Fechar menu" className="absolute inset-0 bg-black/60" onClick={() => setMenuPath(null)} />
           <div className="absolute inset-y-0 right-0 flex w-[300px] max-w-[86%] flex-col gap-5 bg-card p-5 pt-safe pb-safe animate-in slide-in-from-right">
             <div className="flex items-center justify-between pt-3">
-              <div className="flex items-center gap-3">
-                <span className="flex size-10 items-center justify-center rounded-xl bg-primary/20 text-sm font-bold text-primary">{iniciais(nome)}</span>
+              <Link href="/perfil" className="flex items-center gap-3">
+                <Avatar nome={nome} url={avatarUrl} className="size-10 rounded-xl text-sm" />
                 <div className="leading-tight">
                   <p className="font-semibold">{nome}</p>
-                  <p className="text-xs text-muted-foreground">{papel}</p>
+                  <p className="text-xs text-muted-foreground">{papel} · ver perfil</p>
                 </div>
-              </div>
+              </Link>
               <Button variant="ghost" size="icon" aria-label="Fechar menu" onClick={() => setMenuPath(null)}>
                 <X />
               </Button>
             </div>
             <nav className="flex flex-1 flex-col gap-1">
-              {items.map(({ href, label, icon: Icon }) => (
-                <Link
-                  key={href}
-                  href={href}
-                  className={cn(
-                    'flex items-center gap-3 rounded-xl px-3 py-3 text-[15px] font-medium',
-                    isActive(pathname, href) ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-raised',
-                  )}
-                >
-                  <Icon className="size-5" />
-                  {label}
-                </Link>
-              ))}
+              {[...items, ...(role === 'motorista' ? [] : [{ href: '/perfil', label: 'Meu perfil', icon: UserRound }])].map(
+                ({ href, label, icon: Icon }) => (
+                  <Link
+                    key={href}
+                    href={href}
+                    className={cn(
+                      'flex items-center gap-3 rounded-xl px-3 py-3 text-[15px] font-medium',
+                      ativo(href) ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-raised',
+                    )}
+                  >
+                    <Icon className="size-5" />
+                    {label}
+                  </Link>
+                ),
+              )}
             </nav>
             <form action={signOut}>
               <Button type="submit" variant="secondary" className="w-full">

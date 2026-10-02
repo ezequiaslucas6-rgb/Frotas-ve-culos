@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { ArrowRight, CircleCheck, ClipboardCheck, Plus, TriangleAlert, Wrench } from 'lucide-react';
+import { ArrowRight, CircleCheck, ClipboardCheck, IdCard, Plus, TriangleAlert, Wrench } from 'lucide-react';
 import { AtualizarAlertasButton } from '@/components/atualizar-alertas-button';
 import { Donut } from '@/components/charts/donut';
 import { Sparkline, type Ponto } from '@/components/charts/sparkline';
@@ -8,13 +8,14 @@ import { FilialFilter } from '@/components/filial-filter';
 import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState, PageHeader } from '@/components/ui/page-header';
-import { AlertaBadge, ChecklistStatusBadge, SaudeBadge } from '@/components/ui/status-badges';
+import { AlertaBadge, ChecklistStatusBadge, CnhBadge, SaudeBadge } from '@/components/ui/status-badges';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { requireSession } from '@/lib/auth';
-import { toISODate } from '@/lib/dates';
+import { addDays, toISODate } from '@/lib/dates';
 import { formatBRL, formatDateTime, formatFilial, formatKm } from '@/lib/format';
 import { avaliarVeiculoPainel } from '@/lib/maintenance/alerts';
 import { descreverAlerta } from '@/lib/maintenance/describe';
+import { CNH_AVISO_DIAS, situacaoCnh } from '@/lib/motoristas/cnh';
 import { resolveFilialFilter, type SearchParams } from '@/lib/pagination';
 import { cn } from '@/lib/utils';
 import { formatPlaca } from '@/lib/validators/documentos';
@@ -50,6 +51,18 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   let veiculosQ = supabase.from('vw_veiculos_painel').select('*').order('placa');
   let custosQ = supabase.from('manutencoes').select('custo, filial_id, data_manutencao').gte('data_manutencao', `${meses[0]}-01`);
+  let combustivelQ = supabase
+    .from('abastecimentos')
+    .select('valor_total, filial_id, data_abastecimento')
+    .gte('data_abastecimento', `${meses[0]}-01`);
+  // CNH vencida, vencendo em até 30 dias ou sem validade (motoristas em atividade)
+  let cnhQ = supabase
+    .from('motoristas')
+    .select('id, nome, cnh_validade, filial_id')
+    .neq('status', 'inativo')
+    .or(`cnh_validade.is.null,cnh_validade.lte.${addDays(hoje, CNH_AVISO_DIAS)}`)
+    .order('cnh_validade', { ascending: true, nullsFirst: false })
+    .limit(50);
   let checklistsMesQ = supabase.from('checklists').select('veiculo_id').gte('data_envio', `${inicioMes}T00:00:00-03:00`);
   let ultimosQ = supabase
     .from('checklists')
@@ -59,16 +72,28 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   if (filialId) {
     veiculosQ = veiculosQ.eq('filial_id', filialId);
     custosQ = custosQ.eq('filial_id', filialId);
+    combustivelQ = combustivelQ.eq('filial_id', filialId);
+    cnhQ = cnhQ.eq('filial_id', filialId);
     checklistsMesQ = checklistsMesQ.eq('filial_id', filialId);
     ultimosQ = ultimosQ.eq('filial_id', filialId);
   }
 
-  const [{ data: veiculosRaw }, { data: custos }, { data: checklistsMes }, { data: ultimos }, { data: filiais }] = await Promise.all([
+  const [
+    { data: veiculosRaw },
+    { data: custos },
+    { data: checklistsMes },
+    { data: ultimos },
+    { data: filiais },
+    { data: combustivel },
+    { data: cnhs },
+  ] = await Promise.all([
     veiculosQ,
     custosQ,
     checklistsMesQ,
     ultimosQ,
     isAdmin ? supabase.from('filiais').select('id, nome_cidade, uf').order('nome_cidade') : Promise.resolve({ data: null }),
+    combustivelQ,
+    cnhQ,
   ]);
 
   const veiculos = (veiculosRaw ?? []).map((v) => ({ ...v, ...avaliarVeiculoPainel(v, hoje) }));
@@ -79,18 +104,25 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const manutencao = conta('manutencao');
   const verificados = new Set((checklistsMes ?? []).map((c) => c.veiculo_id)).size;
 
-  // custo por mês (série única)
-  const porMes = new Map(meses.map((m) => [m, 0]));
-  for (const c of custos ?? []) {
-    const m = String(c.data_manutencao).slice(0, 7);
-    if (porMes.has(m)) porMes.set(m, (porMes.get(m) ?? 0) + Number(c.custo));
-  }
-  const serie: Ponto[] = meses.map((m) => ({
-    rotulo: MESES[Number(m.slice(5)) - 1]!,
-    rotuloLongo: `${MESES_LONGOS[Number(m.slice(5)) - 1]}/${m.slice(0, 4)}`,
-    valor: porMes.get(m) ?? 0,
-    texto: formatBRL(porMes.get(m) ?? 0),
-  }));
+  // custo da frota por mês (manutenção + combustível, série única)
+  const manutencaoMes = new Map(meses.map((m) => [m, 0]));
+  const combustivelMes = new Map(meses.map((m) => [m, 0]));
+  const somar = (mapa: Map<string, number>, data: string, valor: number) => {
+    const m = data.slice(0, 7);
+    if (mapa.has(m)) mapa.set(m, (mapa.get(m) ?? 0) + valor);
+  };
+  for (const c of custos ?? []) somar(manutencaoMes, String(c.data_manutencao), Number(c.custo));
+  for (const a of combustivel ?? []) somar(combustivelMes, String(a.data_abastecimento), Number(a.valor_total));
+  const serie: Ponto[] = meses.map((m) => {
+    const valor = (manutencaoMes.get(m) ?? 0) + (combustivelMes.get(m) ?? 0);
+    return {
+      rotulo: MESES[Number(m.slice(5)) - 1]!,
+      rotuloLongo: `${MESES_LONGOS[Number(m.slice(5)) - 1]}/${m.slice(0, 4)}`,
+      valor,
+      texto: formatBRL(valor),
+    };
+  });
+  const mesAtual = meses.at(-1)!;
   const custoMes = serie.at(-1)!.valor;
   const custoAnterior = serie.at(-2)!.valor;
   const variacao = custoAnterior > 0 ? ((custoMes - custoAnterior) / custoAnterior) * 100 : null;
@@ -117,11 +149,17 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             custo: (custos ?? [])
               .filter((m) => m.filial_id === f.id && String(m.data_manutencao) >= inicioMes)
               .reduce((acc, m) => acc + Number(m.custo), 0),
+            combustivel: (combustivel ?? [])
+              .filter((a) => a.filial_id === f.id && String(a.data_abastecimento) >= inicioMes)
+              .reduce((acc, a) => acc + Number(a.valor_total), 0),
           };
         })
       : [];
 
   const pct = (n: number) => (total ? Math.round((n / total) * 100) : 0);
+  const alertasCnh = (cnhs ?? [])
+    .map((m) => ({ ...m, situacao: situacaoCnh(m.cnh_validade, hoje) }))
+    .filter((m) => m.situacao.nivel !== 'ok');
 
   return (
     <div className="flex flex-col gap-5">
@@ -149,9 +187,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <Card className="gap-2 px-6 pt-6 pb-4 lg:col-span-2">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <p className="text-sm text-muted-foreground">Custo de manutenção · {MESES_LONGOS[Number(meses.at(-1)!.slice(5)) - 1]}</p>
+              <p className="text-sm text-muted-foreground">Custo da frota · {MESES_LONGOS[Number(mesAtual.slice(5)) - 1]}</p>
               <p className="mt-1 text-4xl font-bold tracking-tight">{formatBRL(custoMes)}</p>
               <p className="mt-1 text-xs text-muted-foreground">
+                Manutenção {formatBRL(manutencaoMes.get(mesAtual) ?? 0)} · Combustível {formatBRL(combustivelMes.get(mesAtual) ?? 0)}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 {variacao == null ? 'Sem lançamentos no mês anterior' : `${variacao >= 0 ? '+' : ''}${variacao.toFixed(0)}% em relação ao mês anterior`}
               </p>
             </div>
@@ -160,7 +201,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               <p className="text-lg font-semibold">{formatBRL(custo6m)}</p>
             </div>
           </div>
-          <Sparkline pontos={serie} titulo="Custo de manutenção por mês, últimos 6 meses" />
+          <Sparkline pontos={serie} titulo="Custo da frota (manutenção + combustível) por mês, últimos 6 meses" />
         </Card>
 
         <Card className="px-6 py-6">
@@ -232,7 +273,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </Card>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid gap-5 lg:grid-cols-3">
         <Card className="px-0">
           <CardHeader>
             <CardTitle>Requer atenção</CardTitle>
@@ -291,6 +332,29 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             )}
           </CardContent>
         </Card>
+
+        <Card className="px-0">
+          <CardHeader className="flex-row items-center justify-between">
+            <CardTitle>CNH dos motoristas</CardTitle>
+            <span className="text-xs text-muted-foreground">{alertasCnh.length} pendência(s)</span>
+          </CardHeader>
+          <CardContent>
+            {alertasCnh.length === 0 ? (
+              <EmptyState icon={<IdCard />} title="Todas as CNHs em dia" />
+            ) : (
+              <ul className="divide-y divide-border/60">
+                {alertasCnh.slice(0, 8).map((m) => (
+                  <li key={m.id}>
+                    <Link href={`/motoristas/${m.id}`} className="flex items-center justify-between gap-3 py-3">
+                      <span className="min-w-0 truncate font-semibold">{m.nome}</span>
+                      <CnhBadge situacao={m.situacao} />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {porFilial.length > 0 ? (
@@ -307,7 +371,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                   <TableHead className="text-right">Liberados</TableHead>
                   <TableHead className="text-right">Atenção</TableHead>
                   <TableHead className="text-right">Manutenção</TableHead>
-                  <TableHead className="text-right">Custo no mês</TableHead>
+                  <TableHead className="text-right">Manutenção no mês</TableHead>
+                  <TableHead className="text-right">Combustível no mês</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -323,6 +388,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                     <TableCell className="text-right text-warning-text">{r.atencao}</TableCell>
                     <TableCell className="text-right text-destructive-text">{r.manutencao}</TableCell>
                     <TableCell className="text-right">{formatBRL(r.custo)}</TableCell>
+                    <TableCell className="text-right">{formatBRL(r.combustivel)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

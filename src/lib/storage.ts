@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
 
-export type BucketName = 'veiculos' | 'checklists';
+export type BucketName = 'veiculos' | 'checklists' | 'motoristas' | 'abastecimentos' | 'perfis';
 
 const DEFAULT_TTL = 60 * 60; // 1h
 

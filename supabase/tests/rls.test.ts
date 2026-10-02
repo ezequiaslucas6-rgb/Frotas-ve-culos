@@ -5,11 +5,9 @@
  * plataforma Supabase e valida, por role, o que cada usuário consegue ver/alterar.
  *   npm test
  */
-import { readdirSync, readFileSync } from 'node:fs';
-import { PGlite } from '@electric-sql/pglite';
+import type { PGlite } from '@electric-sql/pglite';
 import { beforeAll, describe, expect, it } from 'vitest';
-
-const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), 'utf8');
+import { criarBanco } from './banco';
 
 const ADMIN = '00000000-0000-4000-8000-0000000000a1';
 const SUP_SP = '00000000-0000-4000-8000-0000000000b1';
@@ -46,32 +44,11 @@ const fotos = (filial: string, checklistId: string, severidades: Record<string, 
   }));
 
 let db: PGlite;
-
-/** Executa `fn` como um usuário autenticado (JWT sub = userId) ou como `anon`. */
-async function as<T>(userId: string | null, fn: () => Promise<T>): Promise<T> {
-  if (userId) {
-    await db.exec(`set role authenticated; select set_config('request.jwt.claim.sub', '${userId}', false);`);
-  } else {
-    await db.exec(`set role anon; select set_config('request.jwt.claim.sub', '', false);`);
-  }
-  try {
-    return await fn();
-  } finally {
-    await db.exec('reset role');
-  }
-}
-
-const rows = async <T = Record<string, unknown>>(sql: string, params: unknown[] = []) =>
-  (await db.query<T>(sql, params)).rows;
+let as: Awaited<ReturnType<typeof criarBanco>>['as'];
+let rows: Awaited<ReturnType<typeof criarBanco>>['rows'];
 
 beforeAll(async () => {
-  db = new PGlite();
-  await db.exec(read('./supabase-shim.sql'));
-  // aplica TODAS as migrations, em ordem
-  const migrationsDir = new URL('../migrations/', import.meta.url);
-  for (const file of readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort()) {
-    await db.exec(readFileSync(new URL(file, migrationsDir), 'utf8'));
-  }
+  ({ db, as, rows } = await criarBanco());
 
   await db.exec(`
     insert into auth.users (id, email) values

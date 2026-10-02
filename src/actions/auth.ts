@@ -3,7 +3,7 @@
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { fail, type ActionState } from '@/lib/action-state';
-import { getSession } from '@/lib/auth';
+import { getSession, homeDoPapel } from '@/lib/auth';
 import { formDataToObject } from '@/lib/schemas';
 import { createClient } from '@/lib/supabase/server';
 
@@ -14,7 +14,8 @@ const loginSchema = z.object({
 });
 
 /** Só aceita redirecionamentos internos (evita open redirect). */
-const safeNext = (next?: string) => (next && /^\/(?!\/)/.test(next) && !next.startsWith('/login') ? next : '/dashboard');
+const safeNext = (next: string | undefined, home: string) =>
+  next && /^\/(?!\/)/.test(next) && !next.startsWith('/login') ? next : home;
 
 export async function signIn(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const parsed = loginSchema.safeParse(formDataToObject(formData));
@@ -28,12 +29,14 @@ export async function signIn(_prev: ActionState, formData: FormData): Promise<Ac
   if (error) return fail('E-mail ou senha inválidos.');
 
   // Usuário do Auth sem perfil (profiles) não tem acesso ao sistema.
-  if (!(await getSession())) {
+  const session = await getSession();
+  if (!session) {
     await supabase.auth.signOut();
     return fail('Seu usuário ainda não foi habilitado. Fale com o administrador.');
   }
 
-  redirect(safeNext(parsed.data.next));
+  // o proxy ainda barra um "next" que o papel não acessa
+  redirect(safeNext(parsed.data.next, homeDoPapel(session.profile.role)));
 }
 
 export async function signOut() {

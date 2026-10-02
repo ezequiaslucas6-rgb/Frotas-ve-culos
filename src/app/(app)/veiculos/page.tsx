@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Gauge, Plus, Search, Truck } from 'lucide-react';
+import { Gauge, Plus, Search, Truck, UserRound } from 'lucide-react';
 import { FilialFilter } from '@/components/filial-filter';
 import { Pagination } from '@/components/pagination';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -107,6 +107,11 @@ export default async function VeiculosPage({ searchParams }: { searchParams: Pro
                     <Gauge className="size-3.5" /> {formatKm(v.km_atual)}
                     {isAdmin ? ` · ${formatFilial(v)}` : ''}
                   </p>
+                  {v.motorista_nome ? (
+                    <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
+                      <UserRound className="size-3.5 shrink-0" /> {v.motorista_nome}
+                    </p>
+                  ) : null}
                   {v.alerta.nivel !== 'ok' ? <p className="text-xs text-muted-foreground">{descreverAlerta(v.alerta)}</p> : null}
                 </div>
               </Link>

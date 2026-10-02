@@ -7,6 +7,10 @@ import { getSupabasePublicEnv } from './env';
 const PUBLIC_PATHS = ['/login'];
 /** Rotas exclusivas do Administrador Geral (validadas aqui E nas páginas/actions). */
 const ADMIN_PATHS = ['/filiais', '/supervisores'];
+/** As ÚNICAS rotas que o motorista acessa (todo o resto o devolve ao "Meu veículo"). */
+const MOTORISTA_PATHS = ['/meu-veiculo', '/abastecimentos', '/perfil', '/sem-acesso'];
+/** Exclusivas do motorista. */
+const SOMENTE_MOTORISTA_PATHS = ['/meu-veiculo'];
 
 const matches = (pathname: string, bases: string[]) =>
   bases.some((base) => pathname === base || pathname.startsWith(`${base}/`));
@@ -14,7 +18,8 @@ const matches = (pathname: string, bases: string[]) =>
 /**
  * Renova a sessão do Supabase e aplica o controle de acesso por rota:
  *  - sem sessão válida  -> /login?next=<rota>
- *  - logado em /login   -> /dashboard
+ *  - logado em /login   -> página inicial do papel
+ *  - motorista          -> só MOTORISTA_PATHS
  *  - rota de admin      -> exige profiles.role = 'admin' (consulta com a RLS do usuário)
  *
  * Importante: a autorização REAL dos dados é a RLS do Postgres; este proxy é a
@@ -58,12 +63,19 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     return redirectTo('/login', pathname === '/' ? undefined : { next: `${pathname}${search}` });
   }
 
-  if (matches(pathname, PUBLIC_PATHS)) return redirectTo('/dashboard');
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle();
+  const role = profile?.role;
+  const home = role === 'motorista' ? '/meu-veiculo' : '/dashboard';
 
-  if (matches(pathname, ADMIN_PATHS)) {
-    const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle();
-    if (profile?.role !== 'admin') return redirectTo('/dashboard', { erro: 'acesso-negado' });
+  if (matches(pathname, PUBLIC_PATHS)) return redirectTo(home);
+  if (!role) return response; // sem perfil: as páginas levam a /sem-acesso
+
+  if (role === 'motorista') {
+    if (!matches(pathname, MOTORISTA_PATHS)) return redirectTo(home);
+    return response;
   }
+  if (matches(pathname, SOMENTE_MOTORISTA_PATHS)) return redirectTo(home);
+  if (matches(pathname, ADMIN_PATHS) && role !== 'admin') return redirectTo(home, { erro: 'acesso-negado' });
 
   return response;
 }

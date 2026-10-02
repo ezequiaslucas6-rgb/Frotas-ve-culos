@@ -4,17 +4,26 @@ import { useId, useRef, useState } from 'react';
 import { Camera, FileText, ImagePlus, Loader2, RefreshCw, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { compressImage, formatBytes } from '@/lib/image/compress';
+import type { BucketName } from '@/lib/storage';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
+import { uuid } from '@/lib/uuid';
 
 interface FileUploadProps {
   /** nome do <input hidden> que leva o caminho do arquivo no Storage para a Server Action */
   name: string;
   label: string;
-  /** destino no bucket "veiculos": <filialId>/veiculos/<pastaId>/<arquivo> */
-  filialId: string | null;
-  pastaId: string;
-  arquivo: 'foto-geral' | 'documento';
+  bucket?: BucketName;
+  /** pasta no bucket, sempre começando pela filial (ex.: <filialId>/veiculos/<id>); null = filial ainda não escolhida */
+  pasta: string | null;
+  /** nome do arquivo sem extensão */
+  arquivo: string;
+  /** gera um nome novo a cada envio (sem sobrescrever) — exigido onde o usuário não pode substituir arquivos */
+  nomeUnico?: boolean;
+  /** maior lado da imagem após a compressão (documentos pedem mais resolução) */
+  maxDimension?: number;
+  /** mensagem quando a pasta ainda não está definida */
+  semPastaMsg?: string;
   accept: string;
   /** caminho já salvo (edição) e a URL assinada para exibi-lo */
   initialPath?: string | null;
@@ -28,7 +37,7 @@ type Phase = 'idle' | 'compressing' | 'uploading' | 'error';
 const MAX_PDF_BYTES = 10 * 1024 * 1024;
 
 /**
- * Upload direto do browser para o Supabase Storage (bucket privado "veiculos"), com
+ * Upload direto do browser para o Supabase Storage (buckets privados), com
  * compressão de imagem antes do envio. PDFs sobem como estão. O formulário recebe
  * apenas o caminho (input hidden) — o arquivo nunca passa pela Server Action
  * (evita o limite de payload da Vercel).
@@ -36,9 +45,12 @@ const MAX_PDF_BYTES = 10 * 1024 * 1024;
 export function FileUpload({
   name,
   label,
-  filialId,
-  pastaId,
+  bucket = 'veiculos',
+  pasta,
   arquivo,
+  nomeUnico = false,
+  maxDimension = 1600,
+  semPastaMsg = 'Selecione a filial antes de enviar arquivos.',
   accept,
   initialPath = null,
   initialUrl = null,
@@ -55,8 +67,8 @@ export function FileUpload({
   const [error, setError] = useState<string | null>(null);
 
   async function handleFile(file: File) {
-    if (!filialId) {
-      setError('Selecione a filial antes de enviar arquivos.');
+    if (!pasta) {
+      setError(semPastaMsg);
       setPhase('error');
       return;
     }
@@ -74,7 +86,7 @@ export function FileUpload({
 
       if (!pdf) {
         setPhase('compressing');
-        const compressed = await compressImage(file, { maxDimension: arquivo === 'documento' ? 2200 : 1600, quality: 0.82 });
+        const compressed = await compressImage(file, { maxDimension, quality: 0.82 });
         body = compressed.blob;
         contentType = compressed.blob.type || 'image/jpeg';
         ext = 'jpg';
@@ -82,10 +94,10 @@ export function FileUpload({
       }
 
       setPhase('uploading');
-      const destino = `${filialId}/veiculos/${pastaId}/${arquivo}.${ext}`;
+      const destino = `${pasta}/${nomeUnico ? `${arquivo}-${uuid()}` : arquivo}.${ext}`;
       const { error: uploadError } = await createClient()
-        .storage.from('veiculos')
-        .upload(destino, body, { upsert: true, contentType, cacheControl: '3600' });
+        .storage.from(bucket)
+        .upload(destino, body, { upsert: !nomeUnico, contentType, cacheControl: '3600' });
       if (uploadError) throw new Error('Falha no envio. Verifique a conexão e tente novamente.');
 
       setPath(destino);

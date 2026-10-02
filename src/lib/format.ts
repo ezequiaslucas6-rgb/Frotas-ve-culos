@@ -29,3 +29,8 @@ export const formatVeiculo = (v: { placa: string; marca?: string | null; modelo?
   [v.placa, [v.marca, v.modelo].filter(Boolean).join(' ')].filter(Boolean).join(' · ');
 
 export const formatFilial = (f: { nome_cidade: string; uf: string }) => `${f.nome_cidade}/${f.uf}`;
+
+export const UFS = [
+  'AC', 'AL', 'AM', 'AP', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MG', 'MS', 'MT', 'PA', 'PB', 'PE', 'PI', 'PR',
+  'RJ', 'RN', 'RO', 'RR', 'RS', 'SC', 'SE', 'SP', 'TO',
+] as const;

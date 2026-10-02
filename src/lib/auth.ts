@@ -12,7 +12,18 @@ export interface Session {
   user: User;
   profile: Profile;
   isAdmin: boolean;
+  /** Motorista: enxerga só o próprio cadastro, os veículos sob sua responsabilidade e os próprios abastecimentos. */
+  isMotorista: boolean;
 }
+
+export const PAPEL_LABEL = {
+  admin: 'Administrador Geral',
+  supervisor: 'Supervisor',
+  motorista: 'Motorista',
+} as const;
+
+/** Página inicial de cada papel. */
+export const homeDoPapel = (role: Profile['role']) => (role === 'motorista' ? '/meu-veiculo' : '/dashboard');
 
 /** Usuário autenticado + perfil (role/filial). Memoizado por requisição. */
 export const getSession = cache(async (): Promise<Session | null> => {
@@ -29,15 +40,21 @@ export const getSession = cache(async (): Promise<Session | null> => {
     .maybeSingle();
   if (!profile) return null;
 
-  return { user, profile, isAdmin: profile.role === 'admin' };
+  return { user, profile, isAdmin: profile.role === 'admin', isMotorista: profile.role === 'motorista' };
 });
 
 /**
  * Garante usuário logado COM perfil.
- *  - sem sessão                -> /login
+ *  - sem sessão                      -> /login
  *  - sessão sem registro em profiles -> /sem-acesso (evita loop de redirecionamento)
+ *  - motorista                       -> /meu-veiculo, salvo nas telas que o admitem (`motorista: true`)
+ *
+ * Seguro por padrão: toda página/action da gestão que já chama requireSession()
+ * continua fechada para o motorista sem precisar mudar nada.
  */
-export async function requireSession(): Promise<Session & { supabase: Awaited<ReturnType<typeof createClient>> }> {
+export async function requireSession(
+  opts: { motorista?: boolean } = {},
+): Promise<Session & { supabase: Awaited<ReturnType<typeof createClient>> }> {
   const session = await getSession();
   const supabase = await createClient();
   if (!session) {
@@ -46,6 +63,7 @@ export async function requireSession(): Promise<Session & { supabase: Awaited<Re
     } = await supabase.auth.getUser();
     redirect(user ? '/sem-acesso' : '/login');
   }
+  if (session.isMotorista && !opts.motorista) redirect('/meu-veiculo');
   return { ...session, supabase };
 }
 
@@ -53,6 +71,13 @@ export async function requireSession(): Promise<Session & { supabase: Awaited<Re
 export async function requireAdmin() {
   const session = await requireSession();
   if (!session.isAdmin) redirect('/dashboard?erro=acesso-negado');
+  return session;
+}
+
+/** Telas exclusivas do motorista (ex.: Meu veículo). */
+export async function requireMotorista() {
+  const session = await requireSession({ motorista: true });
+  if (!session.isMotorista) redirect('/dashboard');
   return session;
 }
 

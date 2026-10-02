@@ -10,6 +10,8 @@ import { sincronizarAlertas } from '@/lib/maintenance/sync';
 import { flattenErrors, formDataToObject, veiculoSchema } from '@/lib/schemas';
 
 /** Arquivos do veículo vivem em <filial_id>/... no bucket "veiculos". */
+const MOTORISTA_INVALIDO = 'O motorista responsável precisa ser da mesma filial do veículo.';
+
 const pathBelongsTo = (path: string | undefined, filialId: string) => !path || path.startsWith(`${filialId}/`);
 
 export async function salvarVeiculo(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -44,6 +46,8 @@ export async function salvarVeiculo(_prev: ActionState, formData: FormData): Pro
     intervalo_revisao_dias: v.intervalo_revisao_dias,
     documento_url: documento_path ?? null,
     foto_geral_url: foto_geral_path ?? null,
+    // FK composta (motorista_id, filial_id): o banco recusa motorista de outra filial
+    motorista_id: v.motorista_id ?? null,
   };
 
   if (id) {
@@ -55,7 +59,7 @@ export async function salvarVeiculo(_prev: ActionState, formData: FormData): Pro
         proxima_revisao_data: v.proxima_revisao_data ?? null,
       })
       .eq('id', id);
-    if (error) return fail(friendlyDbError(error));
+    if (error) return fail(error.code === '23503' ? MOTORISTA_INVALIDO : friendlyDbError(error));
     await sincronizarAlertas(session.supabase, { veiculoId: id }).catch(() => undefined);
     revalidatePath('/veiculos');
     revalidatePath(`/veiculos/${id}`);
@@ -73,7 +77,7 @@ export async function salvarVeiculo(_prev: ActionState, formData: FormData): Pro
     })
     .select('id')
     .single();
-  if (error) return fail(friendlyDbError(error));
+  if (error) return fail(error.code === '23503' ? MOTORISTA_INVALIDO : friendlyDbError(error));
 
   revalidatePath('/veiculos');
   redirect(`/veiculos/${created.id}`);

@@ -15,7 +15,8 @@ export const metadata: Metadata = { title: 'Supervisores' };
 export default async function SupervisoresPage() {
   const { supabase, user } = await requireAdmin();
   const [{ data: perfis }, { data: filiais }] = await Promise.all([
-    supabase.from('profiles').select('id, nome, role, filial_id, filiais(nome_cidade, uf)').order('nome'),
+    // motoristas têm o próprio acesso, gerenciado no cadastro de cada um
+    supabase.from('profiles').select('id, nome, role, filial_id, filiais(nome_cidade, uf)').neq('role', 'motorista').order('nome'),
     supabase.from('filiais').select('id, nome_cidade, uf').order('nome_cidade'),
   ]);
 

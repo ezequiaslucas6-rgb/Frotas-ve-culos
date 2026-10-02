@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { isValidCnh, isValidCpf, isValidPlaca, normalizePlaca, normalizeWhatsapp, onlyDigits } from '@/lib/validators/documentos';
 import { CHECKLIST_ETAPAS } from '@/lib/checklist/etapas';
+import { COMBUSTIVEIS, parseDecimalBR } from '@/lib/abastecimento/consumo';
+import { toISODate } from '@/lib/dates';
+import { CNH_CATEGORIAS } from '@/lib/motoristas/cnh';
 
 /** FormData -> objeto simples (strings vazias viram undefined). */
 export function formDataToObject(formData: FormData): Record<string, unknown> {
@@ -24,6 +27,19 @@ const requiredInt = (min: number, label: string, max = 2_000_000_000) =>
   z.coerce.number(`${label}: informe um número.`).int(`${label}: use um número inteiro.`).min(min, `${label}: mínimo ${min}.`).max(max);
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida.');
+const optionalDate = z.preprocess(emptyToUndefined, isoDate.optional());
+/** checkbox HTML: presente ("on") = true */
+const checkbox = z.preprocess((v) => v === 'on' || v === 'true' || v === true, z.boolean());
+const decimal = (label: string, min: number, max: number) =>
+  z.preprocess(
+    parseDecimalBR,
+    z
+      .number(`Informe ${label}.`)
+      .refine(Number.isFinite, `${label[0]!.toUpperCase()}${label.slice(1)} inválido.`)
+      .refine((n) => n >= min, `${label[0]!.toUpperCase()}${label.slice(1)} deve ser maior que zero.`)
+      .refine((n) => n <= max, `Confira ${label}: valor alto demais.`),
+  );
+const senha = z.string('Informe a senha.').min(8, 'A senha deve ter ao menos 8 caracteres.').max(72, 'Senha longa demais.');
 
 /* ----------------------------------------------------------------------------- */
 
@@ -62,7 +78,39 @@ export const motoristaSchema = z.object({
     }),
   cnh: z.string('Informe a CNH.').refine(isValidCnh, 'CNH inválida.').transform(onlyDigits),
   status: z.enum(['ativo', 'inativo', 'afastado', 'ferias']).default('ativo'),
-});
+  // CNH
+  cnh_categoria: z.enum(CNH_CATEGORIAS, 'Selecione a categoria.'),
+  cnh_validade: z.string('Informe a validade.').regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida.'),
+  cnh_primeira_habilitacao: optionalDate,
+  cnh_emissao: optionalDate,
+  cnh_uf: z.preprocess(
+    (v) => (typeof v === 'string' ? v.trim().toUpperCase() || undefined : v),
+    z.string().regex(/^[A-Z]{2}$/, 'UF inválida.').optional(),
+  ),
+  cnh_ear: checkbox,
+  cnh_observacoes: optionalText,
+  cnh_frente_path: optionalText,
+  cnh_verso_path: optionalText,
+})
+  .superRefine((m, ctx) => {
+    const hoje = toISODate();
+    if (m.cnh_emissao && m.cnh_validade && m.cnh_validade <= m.cnh_emissao) {
+      ctx.addIssue({ code: 'custom', path: ['cnh_validade'], message: 'A validade deve ser posterior à emissão.' });
+    }
+    if (m.cnh_emissao && m.cnh_emissao > hoje) {
+      ctx.addIssue({ code: 'custom', path: ['cnh_emissao'], message: 'A emissão não pode ser no futuro.' });
+    }
+    if (m.cnh_primeira_habilitacao && m.cnh_primeira_habilitacao > (m.cnh_emissao ?? hoje)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['cnh_primeira_habilitacao'],
+        message: 'A 1ª habilitação não pode ser posterior à emissão.',
+      });
+    }
+  });
+
+/** Login do motorista no app: o e-mail é o do cadastro; a senha provisória é definida aqui. */
+export const acessoMotoristaSchema = z.object({ motorista_id: uuid, senha });
 
 export const veiculoSchema = z.object({
   id: uuid.optional(),
@@ -81,6 +129,7 @@ export const veiculoSchema = z.object({
   proxima_revisao_data: z.preprocess(emptyToUndefined, isoDate.optional()),
   documento_path: optionalText,
   foto_geral_path: optionalText,
+  motorista_id: z.preprocess(emptyToUndefined, uuid.optional()),
 });
 
 export const manutencaoSchema = z.object({
@@ -118,3 +167,33 @@ export const checklistSchema = z.object({
 });
 
 export type ChecklistInput = z.infer<typeof checklistSchema>;
+
+export const abastecimentoSchema = z
+  .object({
+    veiculo_id: uuid,
+    /** escolhido pelo supervisor/admin; para o motorista o servidor usa o próprio cadastro */
+    motorista_id: z.preprocess(emptyToUndefined, uuid.optional()),
+    data_abastecimento: isoDate,
+    km: requiredInt(0, 'KM'),
+    litros: decimal('a quantidade', 0.01, 5000),
+    valor_total: decimal('o valor total', 0.01, 99_999_999),
+    combustivel: z.enum(COMBUSTIVEIS.map((c) => c.value) as [string, ...string[]], 'Selecione o combustível.'),
+    tanque_cheio: checkbox,
+    posto: z.string().trim().max(120).optional(),
+    observacao: z.string().trim().max(1000).optional(),
+    comprovante_path: optionalText,
+  })
+  .refine((a) => a.data_abastecimento <= toISODate(), {
+    path: ['data_abastecimento'],
+    message: 'A data não pode ser no futuro.',
+  });
+
+export const perfilSchema = z.object({
+  nome: z.string().trim().min(2, 'Informe o nome.').max(120).optional(),
+  avatar_path: optionalText,
+});
+
+export const trocarSenhaSchema = z
+  .object({ senha_atual: z.string('Informe a senha atual.').min(1, 'Informe a senha atual.'), nova_senha: senha, confirmar: z.string().optional() })
+  .refine((s) => s.nova_senha === s.confirmar, { path: ['confirmar'], message: 'As senhas não conferem.' })
+  .refine((s) => s.nova_senha !== s.senha_atual, { path: ['nova_senha'], message: 'Use uma senha diferente da atual.' });

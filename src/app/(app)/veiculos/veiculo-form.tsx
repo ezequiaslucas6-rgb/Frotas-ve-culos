@@ -21,9 +21,11 @@ interface VeiculoFormProps {
   veiculo?: Tables<'veiculos'>;
   fotoUrl?: string | null;
   documentoUrl?: string | null;
+  /** motoristas que podem ser responsáveis (a lista mostra só os da filial escolhida) */
+  motoristas: Array<Pick<Tables<'motoristas'>, 'id' | 'nome' | 'filial_id' | 'status' | 'user_id'>>;
 }
 
-export function VeiculoForm({ filiais, filialFixaId, veiculo, fotoUrl, documentoUrl }: VeiculoFormProps) {
+export function VeiculoForm({ filiais, filialFixaId, veiculo, fotoUrl, documentoUrl, motoristas }: VeiculoFormProps) {
   const { state, pending, onSubmit, fieldError } = useServerForm(salvarVeiculo);
   const editing = Boolean(veiculo);
   const [filialId, setFilialId] = useState<string>(veiculo?.filial_id ?? filialFixaId ?? '');
@@ -65,6 +67,26 @@ export function VeiculoForm({ filiais, filialFixaId, veiculo, fotoUrl, documento
           <Field label="Modelo" htmlFor="modelo" error={fieldError('modelo')}>
             <Input id="modelo" name="modelo" defaultValue={veiculo?.modelo ?? ''} placeholder="Ex.: Strada" />
           </Field>
+          <Field
+            label="Motorista responsável"
+            htmlFor="motorista_id"
+            error={fieldError('motorista_id')}
+            hint="Com acesso ao app, o motorista vê este veículo e lança os abastecimentos."
+            className="sm:col-span-2"
+          >
+            {/* key: ao trocar a filial, a seleção anterior (de outra filial) é descartada */}
+            <Select key={filialId} id="motorista_id" name="motorista_id" defaultValue={veiculo?.motorista_id ?? ''} disabled={!filialId}>
+              <option value="">{filialId ? 'Nenhum' : 'Selecione a filial primeiro'}</option>
+              {motoristas
+                .filter((m) => m.filial_id === filialId && (m.status !== 'inativo' || m.id === veiculo?.motorista_id))
+                .map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.nome}
+                    {m.user_id ? '' : ' (sem acesso ao app)'}
+                  </option>
+                ))}
+            </Select>
+          </Field>
         </CardContent>
       </Card>
 
@@ -76,8 +98,7 @@ export function VeiculoForm({ filiais, filialFixaId, veiculo, fotoUrl, documento
           <FileUpload
             name="foto_geral_path"
             label="Foto geral do veículo"
-            filialId={filialId || null}
-            pastaId={pastaId}
+            pasta={filialId ? `${filialId}/veiculos/${pastaId}` : null}
             arquivo="foto-geral"
             accept="image/*"
             capture
@@ -88,9 +109,9 @@ export function VeiculoForm({ filiais, filialFixaId, veiculo, fotoUrl, documento
           <FileUpload
             name="documento_path"
             label="Documento do veículo (CRLV)"
-            filialId={filialId || null}
-            pastaId={pastaId}
+            pasta={filialId ? `${filialId}/veiculos/${pastaId}` : null}
             arquivo="documento"
+            maxDimension={2200}
             accept="image/*,application/pdf"
             initialPath={veiculo?.documento_url}
             initialUrl={documentoUrl}
