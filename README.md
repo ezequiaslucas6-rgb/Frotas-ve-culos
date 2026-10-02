@@ -37,8 +37,8 @@ bash /opt/frotas/deploy/instalar-vps.sh   # 2ª vez: sobe o app, Nginx/Apache, H
 O script (`deploy/instalar-vps.sh`) é idempotente — rodar de novo **atualiza** o app. Ele:
 instala Docker se faltar · cria swap de 2 GB se a memória for curta para o build · baixa o código em `/opt/frotas` ·
 gera o `CRON_SECRET` · sobe o container só em `127.0.0.1:3010` (o site que já existe na VPS não é afetado) · detecta o
-servidor web (Nginx, Apache ou nenhum → instala Nginx) e cria o site de `frotas.209.50.240.59.sslip.io` · emite o HTTPS
-(Let's Encrypt, renovação automática) · agenda os alertas diários.
+servidor web (Caddy, Nginx, Apache ou nenhum → instala Nginx) e cria o site de `frotas.209.50.240.59.sslip.io` · emite o HTTPS
+(Caddy: automático; Nginx/Apache: Let's Encrypt via certbot) · agenda os alertas diários.
 
 Subdomínio: `*.sslip.io` aponta sozinho para o IP do nome, sem configurar DNS. Para usar outro domínio:
 `DOMINIO=frotas.seudominio.com.br bash /opt/frotas/deploy/instalar-vps.sh` (com o registro A apontando para a VPS).

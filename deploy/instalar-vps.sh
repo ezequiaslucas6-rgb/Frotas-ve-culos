@@ -30,6 +30,14 @@ falha() {
 }
 trap 'falha "Erro na linha $LINENO: $BASH_COMMAND"' ERR
 
+# Nunca executa direto de dentro do repositório: o "git pull" abaixo poderia alterar este arquivo
+# enquanto o bash ainda o lê. Roda de uma cópia temporária.
+if [[ -z ${FROTAS_COPIA:-} && -f $0 && $(realpath "$0") == "$(realpath -m "$DIR")"/* ]]; then
+  COPIA=$(mktemp /tmp/frotas-instalar.XXXXXX)
+  cp "$0" "$COPIA"
+  FROTAS_COPIA=1 exec bash "$COPIA" "$@"
+fi
+
 # ----------------------------------------------------------------------------- pré-requisitos
 msg "Verificando o sistema"
 if [[ $EUID -eq 0 ]]; then
@@ -79,6 +87,14 @@ else
   ok "Baixado: $(git -C "$DIR" log -1 --format='%h %s')"
 fi
 cd "$DIR"
+
+# Se o git pull trouxe uma versão nova deste instalador, reinicia já com ela (uma única vez).
+if [[ -z ${FROTAS_ATUALIZADO:-} && -f $0 ]] && ! cmp -s "$0" "$DIR/deploy/instalar-vps.sh"; then
+  ok "Instalador atualizado: reiniciando com a versão nova"
+  COPIA=$(mktemp /tmp/frotas-instalar.XXXXXX)
+  cp "$DIR/deploy/instalar-vps.sh" "$COPIA"
+  FROTAS_COPIA=1 FROTAS_ATUALIZADO=1 exec bash "$COPIA" "$@"
+fi
 
 # ----------------------------------------------------------------------------- .env
 msg "Configuração (.env)"
@@ -144,7 +160,9 @@ ok "App no ar localmente"
 # ----------------------------------------------------------------------------- servidor web
 msg "Servidor web para $DOMINIO"
 QUEM80="$($SUDO ss -ltnpH 'sport = :80' 2>/dev/null || true)"
-if grep -q nginx <<<"$QUEM80"; then
+if grep -q caddy <<<"$QUEM80"; then
+  WEB=caddy
+elif grep -q nginx <<<"$QUEM80"; then
   WEB=nginx
 elif grep -qE 'apache2|httpd' <<<"$QUEM80"; then
   WEB=apache
@@ -206,6 +224,41 @@ EOF
     $SUDO systemctl reload apache2
     ok "Apache recarregado"
     ;;
+  caddy)
+    # Usa o MESMO arquivo que o Caddy em execução carregou (nunca adivinha), com backup e validação.
+    CADDY_PID=$(pgrep -xo caddy || true)
+    CADDY_ARGS=$(ps -o args= -p "$CADDY_PID" 2>/dev/null || true)
+    CONFIG_WEB=$(sed -nE 's/.*--config[ =]([^ ]+).*/\1/p' <<<"$CADDY_ARGS")
+    if [[ -z $CONFIG_WEB ]] && systemctl is-active -q caddy 2>/dev/null; then
+      CONFIG_WEB=/etc/caddy/Caddyfile # padrão do serviço systemd do pacote
+    fi
+    if [[ -z $CONFIG_WEB || ! -f $CONFIG_WEB || $CONFIG_WEB == *.json ]]; then
+      aviso "Não identifiquei o Caddyfile em uso (processo: ${CADDY_ARGS:-?})."
+      aviso "Adicione manualmente ao Caddyfile e recarregue o Caddy:"
+      printf '\n      %s {\n          reverse_proxy 127.0.0.1:%s\n      }\n\n' "$DOMINIO" "$PORTA"
+      CONFIG_WEB=""
+    elif $SUDO grep -qs "^$DOMINIO {" "$CONFIG_WEB"; then
+      ok "Site já configurado no Caddy ($CONFIG_WEB)"
+    else
+      BACKUP="$CONFIG_WEB.antes-frotas.$(date +%Y%m%d%H%M%S)"
+      $SUDO cp -a "$CONFIG_WEB" "$BACKUP"
+      printf '\n# >>> frotas (adicionado por deploy/instalar-vps.sh)\n%s {\n\tencode zstd gzip\n\treverse_proxy 127.0.0.1:%s\n\theader {\n\t\tX-Content-Type-Options nosniff\n\t\tReferrer-Policy strict-origin-when-cross-origin\n\t}\n}\n# <<< frotas\n' \
+        "$DOMINIO" "$PORTA" | $SUDO tee -a "$CONFIG_WEB" >/dev/null
+      if ! $SUDO caddy validate --config "$CONFIG_WEB" --adapter caddyfile >/tmp/frotas-caddy.log 2>&1; then
+        $SUDO cp -a "$BACKUP" "$CONFIG_WEB"
+        falha "O Caddyfile ficou inválido e foi restaurado (backup: $BACKUP). Detalhes: /tmp/frotas-caddy.log"
+      fi
+      ok "Site adicionado ao Caddy ($CONFIG_WEB; backup em $BACKUP)"
+    fi
+    if [[ -n $CONFIG_WEB ]]; then
+      if systemctl is-active -q caddy 2>/dev/null; then
+        $SUDO systemctl reload caddy
+      else
+        $SUDO caddy reload --config "$CONFIG_WEB" --adapter caddyfile
+      fi
+      ok "Caddy recarregado (o seu outro site não foi alterado)"
+    fi
+    ;;
   outro)
     aviso "A porta 80 está com: $(awk '{print $NF}' <<<"$QUEM80" | head -1)"
     aviso "Configure nele um proxy de $DOMINIO para http://127.0.0.1:$PORTA e rode este script de novo."
@@ -219,6 +272,19 @@ fi
 
 # ----------------------------------------------------------------------------- HTTPS
 URL="http://$DOMINIO"
+if [[ $WEB == caddy && -n $CONFIG_WEB ]]; then
+  msg "HTTPS (emitido automaticamente pelo Caddy)"
+  for _ in $(seq 1 30); do
+    curl -fsS -o /dev/null -m 10 "https://$DOMINIO/login" && break
+    sleep 3
+  done
+  if curl -fsS -o /dev/null -m 10 "https://$DOMINIO/login"; then
+    URL="https://$DOMINIO"
+    ok "Certificado ativo (renovação automática pelo Caddy)"
+  else
+    aviso "O certificado ainda não ficou pronto. Veja: sudo journalctl -u caddy --since '10 min ago' | grep -i $DOMINIO"
+  fi
+fi
 if [[ $WEB == nginx || $WEB == apache ]] && [[ $CONFIG_WEB != /www/server/* ]]; then
   msg "HTTPS (Let's Encrypt)"
   PLUGIN=$([[ $WEB == nginx ]] && echo python3-certbot-nginx || echo python3-certbot-apache)
