@@ -16,9 +16,18 @@ veículos, **alertas de manutenção por KM e por período**, controle de custos
 1. Crie um projeto em [supabase.com](https://supabase.com).
 2. **SQL Editor** → execute, nesta ordem, `supabase/migrations/20260101000000_init.sql` e
    `supabase/migrations/20260102000000_rascunhos.sql` (tabelas, enums, FKs, RLS, view, RPC, Storage, rascunhos).
-3. Execute `supabase/seed.sql` (filiais de exemplo) e siga as instruções do arquivo para criar o **primeiro
-   Administrador Geral**.
-4. **Authentication → Providers → Email**: desative *"Allow new users to sign up"*. Os usuários são criados pelo Admin
+3. Execute `supabase/seed.sql` (filiais de exemplo).
+4. **Primeiro Administrador Geral (obrigatório).** Crie o usuário em *Authentication → Users → Add user* (e-mail + senha,
+   marcando *Auto Confirm User*) e, no **SQL Editor**, vincule-o como admin (troque o e-mail):
+   ```sql
+   insert into public.profiles (id, nome, role, filial_id)
+   select id, 'Administrador Geral', 'admin', null
+     from auth.users
+    where email = 'seu-email@empresa.com';
+   ```
+   Sem essa linha o login funciona, mas o app responde *"Seu usuário ainda não foi habilitado"* (o papel e a filial vêm de
+   `public.profiles`). Os supervisores são criados depois, pela própria aplicação (menu *Supervisores*).
+5. **Authentication → Providers → Email**: desative *"Allow new users to sign up"*. Os usuários são criados pelo Admin
    dentro do sistema (menu *Supervisores*); cadastro aberto não deve existir.
 
 ### 2. Segredos
