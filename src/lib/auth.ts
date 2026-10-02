@@ -1,15 +1,22 @@
 import { cache } from 'react';
+import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import type { User } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
+import { HEADER_EMAIL, HEADER_UID } from '@/lib/supabase/session';
 import type { Tables } from '@/types/database';
 
 export type Profile = Tables<'profiles'> & {
   filiais: Pick<Tables<'filiais'>, 'id' | 'nome_cidade' | 'uf'> | null;
 };
 
+/** Usuário com o login verificado (JWT validado pelo proxy ou aqui). */
+export interface UsuarioVerificado {
+  id: string;
+  email: string | null;
+}
+
 export interface Session {
-  user: User;
+  user: UsuarioVerificado;
   profile: Profile;
   isAdmin: boolean;
   /** Motorista: enxerga só o próprio cadastro, os veículos sob sua responsabilidade e os próprios abastecimentos. */
@@ -25,21 +32,62 @@ export const PAPEL_LABEL = {
 /** Página inicial de cada papel. */
 export const homeDoPapel = (role: Profile['role']) => (role === 'motorista' ? '/meu-veiculo' : '/dashboard');
 
-/** Usuário autenticado + perfil (role/filial). Memoizado por requisição. */
-export const getSession = cache(async (): Promise<Session | null> => {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
+/**
+ * Quem está logado. O proxy já validou o JWT nesta requisição e repassou o usuário
+ * por cabeçalho; só sem ele (ex.: logo após o login, na mesma Server Action) a
+ * validação é feita aqui.
+ */
+const getUsuario = cache(async (): Promise<UsuarioVerificado | null> => {
+  const h = await headers();
+  const uid = h.get(HEADER_UID);
+  if (uid) return { id: uid, email: decodeURIComponent(h.get(HEADER_EMAIL) ?? '') || null };
 
-  const { data: profile } = await supabase
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getClaims();
+  const claims = data?.claims;
+  if (!claims?.sub) return null;
+  return { id: claims.sub, email: typeof claims.email === 'string' ? claims.email : null };
+});
+
+/*
+ * Perfil em memória por 60 s: a navegação entre telas não consulta o banco toda vez
+ * só para saber nome/papel/filial. A consulta continua sob a RLS do próprio usuário;
+ * quem altera um perfil chama esquecerPerfil(). (Papel e filial só mudam pelo admin,
+ * e os DADOS são sempre filtrados pela RLS em tempo real.)
+ */
+const PERFIL_TTL_MS = 60_000;
+const perfis = new Map<string, { perfil: Profile; expira: number }>();
+
+export function esquecerPerfil(userId: string | null | undefined) {
+  if (userId) perfis.delete(userId);
+}
+
+async function carregarPerfil(userId: string): Promise<Profile | null> {
+  const agora = Date.now();
+  const emCache = perfis.get(userId);
+  if (emCache && emCache.expira > agora) return emCache.perfil;
+
+  const supabase = await createClient();
+  const { data: perfil } = await supabase
     .from('profiles')
     .select('*, filiais(id, nome_cidade, uf)')
-    .eq('id', user.id)
+    .eq('id', userId)
     .maybeSingle();
-  if (!profile) return null;
+  if (!perfil) {
+    perfis.delete(userId);
+    return null;
+  }
+  if (perfis.size > 2000) for (const [id, p] of perfis) if (p.expira <= agora) perfis.delete(id);
+  perfis.set(userId, { perfil, expira: agora + PERFIL_TTL_MS });
+  return perfil;
+}
 
+/** Usuário autenticado + perfil (role/filial). Memoizado por requisição. */
+export const getSession = cache(async (): Promise<Session | null> => {
+  const user = await getUsuario();
+  if (!user) return null;
+  const profile = await carregarPerfil(user.id);
+  if (!profile) return null;
   return { user, profile, isAdmin: profile.role === 'admin', isMotorista: profile.role === 'motorista' };
 });
 
@@ -57,12 +105,7 @@ export async function requireSession(
 ): Promise<Session & { supabase: Awaited<ReturnType<typeof createClient>> }> {
   const session = await getSession();
   const supabase = await createClient();
-  if (!session) {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    redirect(user ? '/sem-acesso' : '/login');
-  }
+  if (!session) redirect((await getUsuario()) ? '/sem-acesso' : '/login');
   if (session.isMotorista && !opts.motorista) redirect('/meu-veiculo');
   return { ...session, supabase };
 }

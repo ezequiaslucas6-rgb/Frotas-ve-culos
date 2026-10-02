@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { Plus, Wrench } from 'lucide-react';
 import { excluirManutencao } from '@/actions/manutencoes';
 import { FilialFilter } from '@/components/filial-filter';
+import { FormFiltros } from '@/components/navegacao';
 import { Pagination } from '@/components/pagination';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -75,7 +76,7 @@ export default async function ManutencoesPage({ searchParams }: { searchParams: 
         }
       />
 
-      <form className="flex flex-col gap-2 sm:flex-row" role="search">
+      <FormFiltros className="flex flex-col gap-2 sm:flex-row">
         {filialId && isAdmin ? <input type="hidden" name="filial" value={filialId} /> : null}
         <Select name="tipo" defaultValue={tipo ?? ''} aria-label="Tipo" className="sm:w-44">
           <option value="">Todos os tipos</option>
@@ -87,7 +88,7 @@ export default async function ManutencoesPage({ searchParams }: { searchParams: 
           Filtrar
         </Button>
         {isAdmin ? <FilialFilter filiais={filiais ?? []} /> : null}
-      </form>
+      </FormFiltros>
 
       <section aria-label="Custos" className="grid gap-3 sm:grid-cols-3">
         <Card className="gap-1 py-4">

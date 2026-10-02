@@ -3,7 +3,7 @@
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { fail, ok, type ActionState } from '@/lib/action-state';
-import { requireAdmin, requireSession, resolveFilialId } from '@/lib/auth';
+import { esquecerPerfil, requireAdmin, requireSession, resolveFilialId } from '@/lib/auth';
 import { friendlyDbError } from '@/lib/db-errors';
 import { acessoMotoristaSchema, flattenErrors, formDataToObject, motoristaSchema } from '@/lib/schemas';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -50,6 +50,7 @@ export async function salvarMotorista(_prev: ActionState, formData: FormData): P
 
     const { error } = await session.supabase.from('motoristas').update(values).eq('id', id);
     if (error) return fail(friendlyDbError(error));
+    esquecerPerfil(atual.user_id); // o nome do login acompanha o cadastro
     revalidatePath('/motoristas');
     redirect(`/motoristas/${id}`);
   }
@@ -87,6 +88,7 @@ export async function excluirMotorista(_prev: ActionState, formData: FormData): 
   if (alvo?.user_id) {
     try {
       await createAdminClient().auth.admin.deleteUser(alvo.user_id);
+      esquecerPerfil(alvo.user_id);
     } catch {
       /* o login sem cadastro não enxerga nada (RLS); pode ser removido depois */
     }
@@ -176,6 +178,7 @@ export async function removerAcessoMotorista(_prev: ActionState, formData: FormD
   // apaga o login: o perfil cai em cascata e o cadastro é desvinculado (histórico preservado)
   const { error } = await createAdminClient().auth.admin.deleteUser(m.user_id);
   if (error) return fail('Não foi possível remover o acesso.');
+  esquecerPerfil(m.user_id);
   revalidatePath(`/motoristas/${m.id}`);
   revalidatePath('/motoristas');
   return ok('Acesso removido.');

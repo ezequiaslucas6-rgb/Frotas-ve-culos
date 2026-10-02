@@ -43,6 +43,23 @@ rodar() {
   PORTA=$($SUDO grep -E '^FROTAS_PORTA=' "$DIR/.env" 2>/dev/null | cut -d= -f2)
   PORTA=${PORTA:-3010}
 
+  secao "Supabase: distância e chaves de login"
+  URL_SB=$($SUDO grep -E '^NEXT_PUBLIC_SUPABASE_URL=' "$DIR/.env" 2>/dev/null | cut -d= -f2-)
+  ANON=$($SUDO grep -E '^NEXT_PUBLIC_SUPABASE_ANON_KEY=' "$DIR/.env" 2>/dev/null | cut -d= -f2-)
+  if [[ $URL_SB == https://* ]]; then
+    # cada tela faz de 1 a 3 consultas em sequência: este tempo, multiplicado, é o piso da navegação
+    for _ in 1 2 3; do
+      curl -s -o /dev/null -m 10 -H "apikey: $ANON" -w '  ida e volta VPS -> Supabase: %{time_total}s\n' "$URL_SB/auth/v1/health"
+    done
+    if curl -s -m 10 -H "apikey: $ANON" "$URL_SB/auth/v1/.well-known/jwks.json" | grep -q '"kty"'; then
+      echo "  chave de assinatura assimétrica publicada: SIM (o login é validado na própria VPS)"
+    else
+      echo "  chave de assinatura assimétrica publicada: NÃO (o app consulta o Auth uma vez por tela; veja 'Desempenho' no README)"
+    fi
+  else
+    echo "  NEXT_PUBLIC_SUPABASE_URL não configurada"
+  fi
+
   secao "Docker / app"
   rodar "$SUDO systemctl is-active docker"
   rodar "$SUDO docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'"

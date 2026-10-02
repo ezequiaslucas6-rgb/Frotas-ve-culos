@@ -5,6 +5,7 @@ import { Camera, FileText, ImagePlus, Loader2, RefreshCw, X } from 'lucide-react
 import { Button } from '@/components/ui/button';
 import { compressImage, formatBytes } from '@/lib/image/compress';
 import type { BucketName } from '@/lib/storage';
+import { caminhoMiniatura } from '@/lib/storage-paths';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 import { uuid } from '@/lib/uuid';
@@ -16,12 +17,12 @@ interface FileUploadProps {
   bucket?: BucketName;
   /** pasta no bucket, sempre começando pela filial (ex.: <filialId>/veiculos/<id>); null = filial ainda não escolhida */
   pasta: string | null;
-  /** nome do arquivo sem extensão */
+  /** prefixo do nome do arquivo (cada envio ganha um sufixo único) */
   arquivo: string;
-  /** gera um nome novo a cada envio (sem sobrescrever) — exigido onde o usuário não pode substituir arquivos */
-  nomeUnico?: boolean;
   /** maior lado da imagem após a compressão (documentos pedem mais resolução) */
   maxDimension?: number;
+  /** também grava uma miniatura (<arquivo>.mini.jpg) com este maior lado, para listas */
+  miniatura?: number;
   /** mensagem quando a pasta ainda não está definida */
   semPastaMsg?: string;
   accept: string;
@@ -39,8 +40,10 @@ const MAX_PDF_BYTES = 10 * 1024 * 1024;
 /**
  * Upload direto do browser para o Supabase Storage (buckets privados), com
  * compressão de imagem antes do envio. PDFs sobem como estão. O formulário recebe
- * apenas o caminho (input hidden) — o arquivo nunca passa pela Server Action
- * (evita o limite de payload da Vercel).
+ * apenas o caminho (input hidden) — o arquivo nunca passa pela Server Action.
+ *
+ * Todo envio grava um NOME NOVO (nunca sobrescreve): o arquivo é imutável, então o
+ * navegador pode guardá-lo em cache por muito tempo e a URL assinada é reaproveitada.
  */
 export function FileUpload({
   name,
@@ -48,8 +51,8 @@ export function FileUpload({
   bucket = 'veiculos',
   pasta,
   arquivo,
-  nomeUnico = false,
   maxDimension = 1600,
+  miniatura,
   semPastaMsg = 'Selecione a filial antes de enviar arquivos.',
   accept,
   initialPath = null,
@@ -83,6 +86,7 @@ export function FileUpload({
       let contentType = file.type;
       let ext = pdf ? 'pdf' : 'jpg';
       let info = formatBytes(file.size);
+      let mini: Blob | null = null;
 
       if (!pdf) {
         setPhase('compressing');
@@ -91,13 +95,19 @@ export function FileUpload({
         contentType = compressed.blob.type || 'image/jpeg';
         ext = 'jpg';
         info = `${formatBytes(compressed.originalSize)} → ${formatBytes(compressed.blob.size)}`;
+        // a miniatura sai da imagem já reduzida (decodificar a foto original de novo pesa no celular)
+        if (miniatura) mini = (await compressImage(body, { maxDimension: miniatura, quality: 0.75 })).blob;
       }
 
       setPhase('uploading');
-      const destino = `${pasta}/${nomeUnico ? `${arquivo}-${uuid()}` : arquivo}.${ext}`;
-      const { error: uploadError } = await createClient()
-        .storage.from(bucket)
-        .upload(destino, body, { upsert: !nomeUnico, contentType, cacheControl: '3600' });
+      const destino = `${pasta}/${arquivo}-${uuid()}.${ext}`;
+      const storage = createClient().storage.from(bucket);
+      const opcoes = { upsert: false, cacheControl: '31536000' }; // 1 ano: o nome nunca é reutilizado
+      const [{ error: uploadError }] = await Promise.all([
+        storage.upload(destino, body, { ...opcoes, contentType }),
+        // miniatura é opcional: se falhar, as listas usam a imagem completa
+        mini ? storage.upload(caminhoMiniatura(destino), mini, { ...opcoes, contentType: 'image/jpeg' }).catch(() => null) : null,
+      ]);
       if (uploadError) throw new Error('Falha no envio. Verifique a conexão e tente novamente.');
 
       setPath(destino);

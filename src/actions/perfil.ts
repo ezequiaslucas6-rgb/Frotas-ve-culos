@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
 import { fail, ok, type ActionState } from '@/lib/action-state';
-import { requireSession } from '@/lib/auth';
+import { esquecerPerfil, requireSession } from '@/lib/auth';
 import { friendlyDbError } from '@/lib/db-errors';
 import { flattenErrors, formDataToObject, perfilSchema, trocarSenhaSchema } from '@/lib/schemas';
 import { getSupabasePublicEnv } from '@/lib/supabase/env';
@@ -23,6 +23,7 @@ export async function salvarPerfil(_prev: ActionState, formData: FormData): Prom
   });
   if (error) return fail(friendlyDbError(error));
 
+  esquecerPerfil(session.user.id);
   revalidatePath('/', 'layout'); // nome e foto aparecem no cabeçalho de todas as telas
   return ok('Perfil atualizado.');
 }

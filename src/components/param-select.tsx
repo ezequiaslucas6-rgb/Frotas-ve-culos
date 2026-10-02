@@ -1,6 +1,7 @@
 'use client';
 
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { useNavegacao } from '@/components/navegacao';
 import { Select } from '@/components/ui/input';
 
 /** Filtro simples por parâmetro da URL (?<param>=valor); volta à 1ª página ao mudar. */
@@ -19,7 +20,7 @@ export function ParamSelect({
   /** valor exibido quando o parâmetro não está na URL */
   padrao?: string;
 }) {
-  const router = useRouter();
+  const { navegar } = useNavegacao();
   const pathname = usePathname();
   const params = useSearchParams();
 
@@ -34,7 +35,7 @@ export function ParamSelect({
         else next.delete(param);
         next.delete('page');
         next.delete('registrado');
-        router.replace(next.size ? `${pathname}?${next}` : pathname);
+        navegar(next.size ? `${pathname}?${next}` : pathname, { substituir: true, manterRolagem: true });
       }}
     >
       {todos !== undefined ? <option value="">{todos}</option> : null}

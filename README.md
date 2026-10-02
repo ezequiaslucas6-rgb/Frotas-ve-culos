@@ -93,8 +93,9 @@ daltonismo nos dois temas e sempre aparecem com ícone + texto.
 O isolamento é garantido no banco: RLS em todas as tabelas, FKs compostas `(veiculo_id, filial_id)` e
 `(motorista_id, filial_id)` que impedem referências entre filiais, `profiles` gravável só pelo Admin (nome e foto mudam
 por uma função que altera só esses dois campos), Storage privado por pasta de filial e view com `security_invoker`. O
-`src/proxy.ts` revalida a sessão e libera para o motorista **somente** *Meu veículo*, *Abastecimentos* e *Meu perfil*;
-páginas e Server Actions revalidam — a RLS é a barreira final (testes em `supabase/tests/`).
+`src/proxy.ts` valida o login (assinatura do JWT) em toda requisição; cada página e Server Action exige o papel certo
+(`requireSession` é fechado para o motorista por padrão, que só abre *Meu veículo*, *Abastecimentos* e *Meu perfil*;
+`requireAdmin` para as telas do admin) — e a RLS é a barreira final (testes em `supabase/tests/`).
 
 ## Acesso do motorista
 
@@ -119,6 +120,25 @@ Seção própria no cadastro do motorista: nº de registro, categoria, validade,
 observações, com **fotos de frente e verso** (ou o PDF da CNH digital). Situação pela validade: 🔴 vencida ·
 🟡 vence em até 30 dias · 🟢 em dia — no painel (*CNH dos motoristas*), na lista de motoristas e no app do motorista.
 
+## Desempenho
+
+Trocar de tela não espera o servidor: os links do menu pré-carregam as telas principais **com os dados** e telas já
+abertas voltam do cache do navegador (ambos valem 30 s; qualquer gravação descarta o cache na hora). Filtros, busca e
+paginação atualizam sem recarregar a página, com barra de progresso no topo.
+
+No servidor, cada tela faz o mínimo de idas ao Supabase: o login é validado uma única vez por requisição (no proxy) e
+repassado às páginas; o perfil (nome/papel/filial) fica 60 s em memória; consultas independentes rodam em paralelo; as
+URLs assinadas das imagens são reaproveitadas por 5 h (o navegador usa o próprio cache em vez de baixar de novo); a lista
+de veículos usa **miniaturas** (~30 KB em vez de ~250 KB) geradas no upload.
+
+Medido com 80 ms de distância simulada entre VPS e Supabase: troca de tela de **~430 ms → ~10 ms**; filtro/busca de
+**~430 ms → ~100–180 ms**; chamadas ao Supabase numa sessão típica **−67%**.
+
+**Dica (opcional):** em projetos com a chave de assinatura JWT legada, o proxy ainda consulta o Auth do Supabase uma vez
+por tela. Com as [chaves de assinatura assimétricas](https://supabase.com/docs/guides/auth/signing-keys) o login é
+validado na própria VPS, sem essa ida. O `deploy/diagnostico.sh` mostra qual é o seu caso e a distância VPS → Supabase
+(o ideal é o projeto Supabase na mesma região da VPS).
+
 ## Checklist de 14 etapas
 Câmera nativa do celular, **compressão no aparelho** (fotos de 3–12 MB viram ~300 KB), upload direto ao Storage etapa a etapa
 com novas tentativas, **pins de avaria tocando na foto**, status geral em tempo real e rascunho que sobrevive ao recarregar a
@@ -136,6 +156,9 @@ Semáforo: 🔴 Manutenção/Avaria · 🟡 Atenção · 🟢 Liberado (detalhes
 - Fotos de checklists abandonados, cupons trocados antes do envio e fotos de perfil antigas ficam no Storage
   (usuários não excluem arquivos); um job de limpeza pode vir depois.
 - O checklist de 14 fotos continua sendo feito pelo supervisor; o motorista não registra checklists.
+- Os caches de perfil e de URLs assinadas ficam na memória do container (um único processo, como na VPS); ao reiniciar,
+  recomeçam vazios. Fotos de veículos enviadas antes desta versão não têm miniatura: a lista usa a foto completa até
+  ela ser trocada.
 - Sem fila offline: sem sinal, o envio falha com aviso e o rascunho preserva o que já subiu.
 - A tabela `checklist_rascunhos` (migration 20260102) foi criada para a versão Streamlit; a web guarda o rascunho no
   próprio aparelho e não a usa — pode ficar como está.

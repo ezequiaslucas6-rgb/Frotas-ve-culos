@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { ChevronRight, MessageCircle, Pencil, Plus, Search, Smartphone, Users } from 'lucide-react';
 import { excluirMotorista } from '@/actions/motoristas';
 import { FilialFilter } from '@/components/filial-filter';
+import { FormFiltros } from '@/components/navegacao';
 import { Pagination } from '@/components/pagination';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { DeleteButton } from '@/components/ui/delete-button';
@@ -53,7 +54,7 @@ export default async function MotoristasPage({ searchParams }: { searchParams: P
         }
       />
 
-      <form className="flex flex-col gap-2 sm:flex-row" role="search">
+      <FormFiltros className="flex flex-col gap-2 sm:flex-row">
         {filialId && isAdmin ? <input type="hidden" name="filial" value={filialId} /> : null}
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -63,7 +64,7 @@ export default async function MotoristasPage({ searchParams }: { searchParams: P
           Buscar
         </Button>
         {isAdmin ? <FilialFilter filiais={filiais ?? []} /> : null}
-      </form>
+      </FormFiltros>
 
       {(motoristas ?? []).length === 0 ? (
         <EmptyState

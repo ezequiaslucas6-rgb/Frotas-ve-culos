@@ -186,7 +186,6 @@ export function AbastecimentoForm({ veiculos, motoristas, veiculoInicial, combus
               bucket="abastecimentos"
               pasta={veiculo ? `${veiculo.filial_id}/${veiculo.id}` : null}
               arquivo="cupom"
-              nomeUnico
               maxDimension={1800}
               semPastaMsg="Selecione o veículo antes de enviar o comprovante."
               accept="image/*"

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Gauge, Plus, Search, Truck, UserRound } from 'lucide-react';
 import { FilialFilter } from '@/components/filial-filter';
+import { FormFiltros } from '@/components/navegacao';
 import { Pagination } from '@/components/pagination';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,7 +13,7 @@ import { formatFilial, formatKm } from '@/lib/format';
 import { avaliarVeiculoPainel } from '@/lib/maintenance/alerts';
 import { descreverAlerta } from '@/lib/maintenance/describe';
 import { PAGE_SIZE, pageRange, parsePage, resolveFilialFilter, sanitizeSearch, type SearchParams } from '@/lib/pagination';
-import { signedUrlMap } from '@/lib/storage';
+import { signedThumbMap } from '@/lib/storage';
 import { formatPlaca } from '@/lib/validators/documentos';
 
 export const metadata: Metadata = { title: 'Veículos' };
@@ -35,7 +36,8 @@ export default async function VeiculosPage({ searchParams }: { searchParams: Pro
     isAdmin ? supabase.from('filiais').select('id, nome_cidade, uf').order('nome_cidade') : Promise.resolve({ data: null }),
   ]);
   const veiculos = (data ?? []).map((v) => ({ ...v, ...avaliarVeiculoPainel(v) }));
-  const fotos = await signedUrlMap(supabase, 'veiculos', veiculos.map((v) => v.foto_geral_url));
+  // miniaturas (poucos KB) em vez das fotos completas: a lista carrega bem mais rápido no celular
+  const fotos = await signedThumbMap(supabase, 'veiculos', veiculos.map((v) => v.foto_geral_url));
 
   return (
     <div className="flex flex-col gap-6">
@@ -49,7 +51,7 @@ export default async function VeiculosPage({ searchParams }: { searchParams: Pro
         }
       />
 
-      <form className="flex flex-col gap-2 sm:flex-row" role="search">
+      <FormFiltros className="flex flex-col gap-2 sm:flex-row">
         {filialId && isAdmin ? <input type="hidden" name="filial" value={filialId} /> : null}
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -59,7 +61,7 @@ export default async function VeiculosPage({ searchParams }: { searchParams: Pro
           Buscar
         </Button>
         {isAdmin ? <FilialFilter filiais={filiais ?? []} /> : null}
-      </form>
+      </FormFiltros>
 
       {veiculos.length === 0 ? (
         <EmptyState
@@ -85,7 +87,15 @@ export default async function VeiculosPage({ searchParams }: { searchParams: Pro
                 <div className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted text-muted-foreground">
                   {v.foto_geral_url && fotos[v.foto_geral_url] ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={fotos[v.foto_geral_url]} alt={`Foto do veículo ${v.placa}`} loading="lazy" className="size-full object-cover" />
+                    <img
+                      src={fotos[v.foto_geral_url]}
+                      alt={`Foto do veículo ${v.placa}`}
+                      loading="lazy"
+                      decoding="async"
+                      width={80}
+                      height={80}
+                      className="size-full object-cover"
+                    />
                   ) : (
                     <Truck className="size-7" />
                   )}

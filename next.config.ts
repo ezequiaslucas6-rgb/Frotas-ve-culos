@@ -8,6 +8,10 @@ const nextConfig: NextConfig = {
     // Checklists enviam apenas metadados (as fotos vão direto ao Storage),
     // então o limite padrão de 1MB das Server Actions é suficiente.
     serverActions: { bodySizeLimit: '1mb' },
+    // Telas já abertas (ou pré-carregadas ao passar o mouse/encostar o dedo no menu)
+    // abrem instantaneamente por 30 s, sem ir ao servidor. Toda gravação (Server
+    // Action com revalidatePath) descarta esse cache na hora.
+    staleTimes: { dynamic: 30, static: 30 },
   },
   async headers() {
     return [

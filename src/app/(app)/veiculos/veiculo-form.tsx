@@ -100,6 +100,7 @@ export function VeiculoForm({ filiais, filialFixaId, veiculo, fotoUrl, documento
             label="Foto geral do veículo"
             pasta={filialId ? `${filialId}/veiculos/${pastaId}` : null}
             arquivo="foto-geral"
+            miniatura={360}
             accept="image/*"
             capture
             initialPath={veiculo?.foto_geral_url}

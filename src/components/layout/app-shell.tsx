@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import { LogOut, Menu, Truck, UserRound, X } from 'lucide-react';
 import { signOut } from '@/actions/auth';
+import { AreaConteudo, NavegacaoProvider } from '@/components/navegacao';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -47,6 +48,7 @@ export function AppShell({ nome, papel, role, filialLabel, avatarUrl, children }
   const immersive = pathname.startsWith('/checklists/novo');
 
   return (
+    <NavegacaoProvider>
     <div className="min-h-dvh md:pl-[88px]">
       {/* Trilho lateral (desktop): só ícones, item ativo "encaixa" no conteúdo */}
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-[88px] flex-col items-center gap-8 bg-rail py-6 md:flex">
@@ -60,6 +62,8 @@ export function AppShell({ nome, papel, role, filialLabel, avatarUrl, children }
               <Link
                 key={href}
                 href={href}
+                // telas principais pré-carregadas COM os dados (válidos por 30 s): o clique abre na hora
+                prefetch
                 aria-label={label}
                 aria-current={atual ? 'page' : undefined}
                 className={cn(
@@ -123,7 +127,9 @@ export function AppShell({ nome, papel, role, filialLabel, avatarUrl, children }
         </div>
       </header>
 
-      <main className={cn('mx-auto w-full max-w-[1280px] px-4 pt-2 pb-8 md:px-8', !immersive && 'pb-32 md:pb-10')}>{children}</main>
+      <AreaConteudo className={cn('mx-auto w-full max-w-[1280px] px-4 pt-2 pb-8 md:px-8', !immersive && 'pb-32 md:pb-10')}>
+        {children}
+      </AreaConteudo>
 
       {/* Barra inferior (celular) com câmera ao centro */}
       {!immersive ? (
@@ -177,6 +183,7 @@ export function AppShell({ nome, papel, role, filialLabel, avatarUrl, children }
                   <Link
                     key={href}
                     href={href}
+                    prefetch
                     className={cn(
                       'flex items-center gap-3 rounded-xl px-3 py-3 text-[15px] font-medium',
                       ativo(href) ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-raised',
@@ -197,6 +204,7 @@ export function AppShell({ nome, papel, role, filialLabel, avatarUrl, children }
         </div>
       ) : null}
     </div>
+    </NavegacaoProvider>
   );
 }
 
@@ -204,6 +212,7 @@ function BottomLink({ href, label, ativo, icon }: { href: string; label: string;
   return (
     <Link
       href={href}
+      prefetch
       aria-current={ativo ? 'page' : undefined}
       className={cn('flex h-16 flex-col items-center justify-center gap-1 text-[11px] font-medium text-muted-foreground', ativo && 'text-primary')}
     >

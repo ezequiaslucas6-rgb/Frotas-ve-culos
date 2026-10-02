@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ClipboardCheck, Plus } from 'lucide-react';
 import { FilialFilter } from '@/components/filial-filter';
+import { FormFiltros } from '@/components/navegacao';
 import { Pagination } from '@/components/pagination';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Select } from '@/components/ui/input';
@@ -51,7 +52,7 @@ export default async function ChecklistsPage({ searchParams }: { searchParams: P
         }
       />
 
-      <form className="flex flex-col gap-2 sm:flex-row" role="search">
+      <FormFiltros className="flex flex-col gap-2 sm:flex-row">
         {filialId && isAdmin ? <input type="hidden" name="filial" value={filialId} /> : null}
         <Select name="status" defaultValue={status ?? ''} aria-label="Status" className="sm:w-48">
           <option value="">Todos os status</option>
@@ -63,7 +64,7 @@ export default async function ChecklistsPage({ searchParams }: { searchParams: P
           Filtrar
         </Button>
         {isAdmin ? <FilialFilter filiais={filiais ?? []} /> : null}
-      </form>
+      </FormFiltros>
 
       {(checklists ?? []).length === 0 ? (
         <EmptyState

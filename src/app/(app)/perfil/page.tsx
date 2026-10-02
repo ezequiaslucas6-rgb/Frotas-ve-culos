@@ -17,11 +17,11 @@ export const metadata: Metadata = { title: 'Meu perfil' };
 export default async function PerfilPage() {
   const { supabase, profile, user, isMotorista } = await requireSession({ motorista: true });
 
-  const [avatar, { data: cadastro }] = await Promise.all([
+  const { data: cadastro } = isMotorista ? await supabase.from('motoristas').select('*').maybeSingle() : { data: null };
+  const [avatar, urlsCnh] = await Promise.all([
     signedUrlMap(supabase, 'perfis', [profile.avatar_url]),
-    isMotorista ? supabase.from('motoristas').select('*').maybeSingle() : Promise.resolve({ data: null }),
+    signedUrlMap(supabase, 'motoristas', [cadastro?.cnh_frente_url, cadastro?.cnh_verso_url]),
   ]);
-  const urlsCnh = cadastro ? await signedUrlMap(supabase, 'motoristas', [cadastro.cnh_frente_url, cadastro.cnh_verso_url]) : {};
   const avatarUrl = profile.avatar_url ? (avatar[profile.avatar_url] ?? null) : null;
 
   return (

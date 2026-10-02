@@ -29,7 +29,6 @@ export function PerfilForm({
         bucket="perfis"
         pasta={userId}
         arquivo="avatar"
-        nomeUnico
         maxDimension={512}
         accept="image/*"
         initialPath={avatarPath}

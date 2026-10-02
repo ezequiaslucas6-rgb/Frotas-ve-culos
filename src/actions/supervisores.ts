@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { fail, ok, type ActionState } from '@/lib/action-state';
-import { requireAdmin } from '@/lib/auth';
+import { esquecerPerfil, requireAdmin } from '@/lib/auth';
 import { friendlyDbError } from '@/lib/db-errors';
 import { flattenErrors, formDataToObject, supervisorSchema } from '@/lib/schemas';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -51,6 +51,7 @@ export async function excluirSupervisor(_prev: ActionState, formData: FormData):
   if (alvo?.role !== 'supervisor') return fail('Supervisor não encontrado.');
 
   const { error } = await admin.auth.admin.deleteUser(id);
+  esquecerPerfil(id);
   if (error) {
     return fail('Não foi possível excluir: o supervisor possui checklists registrados (histórico preservado).');
   }

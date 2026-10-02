@@ -1,5 +1,5 @@
-import Link from 'next/link';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { LinkNavegacao } from '@/components/navegacao';
 import { buttonVariants } from '@/components/ui/button';
 import { PAGE_SIZE, type SearchParams } from '@/lib/pagination';
 import { cn } from '@/lib/utils';
@@ -34,15 +34,15 @@ export function Pagination({
   const base = buttonVariants({ variant: 'outline', size: 'sm' });
   return (
     <nav className="flex items-center justify-between gap-2 pt-2" aria-label="Paginação">
-      <Link href={href(page - 1)} aria-disabled={page <= 1} className={cn(base, page <= 1 && 'pointer-events-none opacity-50')}>
+      <LinkNavegacao href={href(page - 1)} aria-disabled={page <= 1} className={cn(base, page <= 1 && 'pointer-events-none opacity-50')}>
         <ChevronLeft /> Anterior
-      </Link>
+      </LinkNavegacao>
       <span className="text-sm text-muted-foreground">
         Página {page} de {pages} · {total} registros
       </span>
-      <Link href={href(page + 1)} aria-disabled={page >= pages} className={cn(base, page >= pages && 'pointer-events-none opacity-50')}>
+      <LinkNavegacao href={href(page + 1)} aria-disabled={page >= pages} className={cn(base, page >= pages && 'pointer-events-none opacity-50')}>
         Próxima <ChevronRight />
-      </Link>
+      </LinkNavegacao>
     </nav>
   );
 }

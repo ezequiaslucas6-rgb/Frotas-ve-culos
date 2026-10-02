@@ -14,15 +14,14 @@ export const metadata: Metadata = { title: 'Supervisores' };
 
 export default async function SupervisoresPage() {
   const { supabase, user } = await requireAdmin();
-  const [{ data: perfis }, { data: filiais }] = await Promise.all([
+  const [{ data: perfis }, { data: filiais }, { data: authUsers }] = await Promise.all([
     // motoristas têm o próprio acesso, gerenciado no cadastro de cada um
     supabase.from('profiles').select('id, nome, role, filial_id, filiais(nome_cidade, uf)').neq('role', 'motorista').order('nome'),
     supabase.from('filiais').select('id, nome_cidade, uf').order('nome_cidade'),
+    // e-mails vivem em auth.users (não em profiles): consulta com a service role, só no servidor
+    createAdminClient().auth.admin.listUsers({ page: 1, perPage: 1000 }),
   ]);
-
-  // e-mails vivem em auth.users (não em profiles): consulta com a service role, só no servidor
   const emails = new Map<string, string>();
-  const { data: authUsers } = await createAdminClient().auth.admin.listUsers({ page: 1, perPage: 1000 });
   for (const u of authUsers?.users ?? []) if (u.email) emails.set(u.id, u.email);
 
   return (

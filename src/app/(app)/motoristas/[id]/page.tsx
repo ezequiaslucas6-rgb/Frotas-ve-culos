@@ -22,10 +22,9 @@ export default async function MotoristaPage({ params }: { params: Promise<{ id: 
   const { id } = await params;
   const { supabase } = await requireSession();
 
-  const { data: m } = await supabase.from('motoristas').select('*, filiais(nome_cidade, uf)').eq('id', id).maybeSingle();
-  if (!m) notFound();
-
-  const [{ data: veiculos }, { data: abastecimentos }, urlsCnh] = await Promise.all([
+  // tudo em paralelo (só depende do id); as URLs das imagens saem numa segunda leva, também em paralelo
+  const [{ data: m }, { data: veiculos }, { data: abastecimentos }] = await Promise.all([
+    supabase.from('motoristas').select('*, filiais(nome_cidade, uf)').eq('id', id).maybeSingle(),
     supabase.from('veiculos').select('id, placa, marca, modelo, km_atual').eq('motorista_id', id).order('placa'),
     supabase
       .from('abastecimentos')
@@ -34,9 +33,12 @@ export default async function MotoristaPage({ params }: { params: Promise<{ id: 
       .order('data_abastecimento', { ascending: false })
       .order('km', { ascending: false })
       .limit(10),
-    signedUrlMap(supabase, 'motoristas', [m.cnh_frente_url, m.cnh_verso_url]),
   ]);
-  const urlsCupom = await signedUrlMap(supabase, 'abastecimentos', (abastecimentos ?? []).map((a) => a.comprovante_url));
+  if (!m) notFound();
+  const [urlsCnh, urlsCupom] = await Promise.all([
+    signedUrlMap(supabase, 'motoristas', [m.cnh_frente_url, m.cnh_verso_url]),
+    signedUrlMap(supabase, 'abastecimentos', (abastecimentos ?? []).map((a) => a.comprovante_url)),
+  ]);
   const porVeiculo = Map.groupBy(abastecimentos ?? [], (a) => a.veiculo_id);
   const consumo = Object.assign({}, ...[...porVeiculo.values()].map((lista) => calcularConsumo(lista).porLancamento));
 

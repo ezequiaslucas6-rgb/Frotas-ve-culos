@@ -24,11 +24,9 @@ export default async function VeiculoPage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   const { supabase, isAdmin } = await requireSession();
 
-  const { data: raw } = await supabase.from('vw_veiculos_painel').select('*').eq('id', id).maybeSingle();
-  if (!raw) notFound();
-  const v = { ...raw, ...avaliarVeiculoPainel(raw) };
-
-  const [{ data: checklists }, { data: manutencoes }, urls, { data: abastecimentos }] = await Promise.all([
+  // tudo em paralelo (só depende do id); as URLs das imagens saem numa segunda leva, também em paralelo
+  const [{ data: raw }, { data: checklists }, { data: manutencoes }, { data: abastecimentos }] = await Promise.all([
+    supabase.from('vw_veiculos_painel').select('*').eq('id', id).maybeSingle(),
     supabase
       .from('checklists')
       .select('id, data_envio, status, km_registro, motoristas(nome)')
@@ -41,7 +39,6 @@ export default async function VeiculoPage({ params }: { params: Promise<{ id: st
       .eq('veiculo_id', id)
       .order('data_manutencao', { ascending: false })
       .limit(8),
-    signedUrlMap(supabase, 'veiculos', [raw.foto_geral_url, raw.documento_url]),
     supabase
       .from('abastecimentos')
       .select('id, data_abastecimento, km, litros, valor_total, preco_litro, combustivel, tanque_cheio, posto, comprovante_url, motoristas(nome)')
@@ -49,8 +46,13 @@ export default async function VeiculoPage({ params }: { params: Promise<{ id: st
       .order('km', { ascending: false })
       .limit(30),
   ]);
+  if (!raw) notFound();
+  const v = { ...raw, ...avaliarVeiculoPainel(raw) };
   const consumo = calcularConsumo(abastecimentos ?? []);
-  const urlsCupom = await signedUrlMap(supabase, 'abastecimentos', (abastecimentos ?? []).slice(0, 6).map((a) => a.comprovante_url));
+  const [urls, urlsCupom] = await Promise.all([
+    signedUrlMap(supabase, 'veiculos', [raw.foto_geral_url, raw.documento_url]),
+    signedUrlMap(supabase, 'abastecimentos', (abastecimentos ?? []).slice(0, 6).map((a) => a.comprovante_url)),
+  ]);
 
   const fotoUrl = raw.foto_geral_url ? urls[raw.foto_geral_url] : undefined;
   const docUrl = raw.documento_url ? urls[raw.documento_url] : undefined;

@@ -1,11 +1,12 @@
 'use client';
 
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { useNavegacao } from '@/components/navegacao';
 import { Select } from '@/components/ui/input';
 
 /** Filtro de filial para o Admin (?filial=<id>). Supervisores não veem este filtro. */
 export function FilialFilter({ filiais }: { filiais: Array<{ id: string; nome_cidade: string; uf: string }> }) {
-  const router = useRouter();
+  const { navegar } = useNavegacao();
   const pathname = usePathname();
   const params = useSearchParams();
   const current = params.get('filial') ?? '';
@@ -20,7 +21,7 @@ export function FilialFilter({ filiais }: { filiais: Array<{ id: string; nome_ci
         if (e.target.value) next.set('filial', e.target.value);
         else next.delete('filial');
         next.delete('page');
-        router.replace(next.size ? `${pathname}?${next}` : pathname);
+        navegar(next.size ? `${pathname}?${next}` : pathname, { substituir: true, manterRolagem: true });
       }}
     >
       <option value="">Todas as filiais</option>
