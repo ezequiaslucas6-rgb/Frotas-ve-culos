@@ -1,0 +1,4 @@
+# Alertas diários de revisão. Adicione com:  crontab -e
+# O horário segue o fuso do servidor (confira com: timedatectl). Em UTC, "0 12" = 09:00 de Brasília.
+# Troque o domínio e use o mesmo CRON_SECRET do arquivo .env.
+0 9 * * * curl -fsS -m 60 -H "Authorization: Bearer COLE_O_CRON_SECRET" https://frotas.SEUDOMINIO.com.br/api/cron/alertas >/dev/null

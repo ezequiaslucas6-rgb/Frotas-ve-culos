@@ -1,0 +1,22 @@
+# Sobe o app na VPS:  docker compose up -d --build
+# Lê as variáveis do arquivo .env (copie de .env.example).
+services:
+  frotas:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+    image: frotas:latest
+    container_name: frotas
+    env_file: .env
+    # só no localhost: o Nginx da VPS publica no subdomínio com HTTPS.
+    # 3010 evita conflito com o site que já roda no servidor.
+    ports:
+      - "127.0.0.1:${FROTAS_PORTA:-3010}:3000"
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

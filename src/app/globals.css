@@ -1,0 +1,116 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import '@fontsource-variable/plus-jakarta-sans';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: 'Plus Jakarta Sans Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--foreground);
+  --color-raised: var(--raised);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-rail: var(--rail);
+  --color-secondary: var(--raised);
+  --color-secondary-foreground: var(--foreground);
+  --color-muted: var(--raised);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: #ffffff;
+  --color-destructive-text: var(--destructive-text);
+  --color-success: var(--success);
+  --color-success-foreground: #ffffff;
+  --color-success-text: var(--success-text);
+  --color-warning: var(--warning);
+  --color-warning-foreground: #ffffff;
+  --color-warning-text: var(--warning-text);
+  --color-border: var(--border);
+  --color-input: var(--raised);
+  --color-ring: var(--primary);
+  --radius-sm: 0.5rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+}
+
+/* Claro: para uso ao ar livre (sol no pátio). Status validado contra #ffffff. */
+:root {
+  --background: #f3f3f7;
+  --foreground: #1c1d25;
+  --card: #ffffff;
+  --raised: #eeeef4;
+  --muted-foreground: #6b6d7c;
+  --border: #e3e3eb;
+  --accent: #ecebfd;
+  --primary: #6c5ce7;
+  --primary-foreground: #ffffff;
+  --rail: #6c5ce7;
+  --success: #1f9467;
+  --success-text: #157350;
+  --warning: #c08414;
+  --warning-text: #8a5c06;
+  --destructive: #d93a4a;
+  --destructive-text: #b42536;
+  color-scheme: light;
+}
+
+/* Escuro (padrão): grafite + roxo. Status validado contra o card #2a2b35. */
+.dark {
+  --background: #1d1e26;
+  --foreground: #f1f1f5;
+  --card: #2a2b35;
+  --raised: #33343f;
+  --muted-foreground: #9294a3;
+  --border: #383946;
+  --accent: #34315a;
+  --primary: #7b6cf6;
+  --primary-foreground: #ffffff;
+  --rail: #6c5ce7;
+  --success: #2ea97a;
+  --success-text: #4cc796;
+  --warning: #c28518;
+  --warning-text: #e3a63b;
+  --destructive: #ea4f78;
+  --destructive-text: #f2759a;
+  color-scheme: dark;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-primary/50;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+    font-feature-settings: 'tnum' 1; /* números tabulares: colunas de valores alinhadas */
+    overscroll-behavior-y: none;
+  }
+  input,
+  select,
+  textarea {
+    font-size: max(16px, 1em); /* evita zoom automático no iOS */
+  }
+  @media (min-width: 768px) {
+    input,
+    select,
+    textarea {
+      font-size: inherit;
+    }
+  }
+}
+
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top);
+}

@@ -1,17 +1,11 @@
-# Python
-__pycache__/
-*.py[cod]
-.venv/
-.pytest_cache/
-.ruff_cache/
-*.egg-info/
-
-# Segredos (NUNCA versionar)
+node_modules
+.next
+out
+build
+next-env.d.ts
+*.tsbuildinfo
 .env
 .env.*
-.streamlit/secrets.toml
-
-# Node (apenas os testes de banco em supabase/tests)
-node_modules/
-
+!.env.example
 .DS_Store
+npm-debug.log*
