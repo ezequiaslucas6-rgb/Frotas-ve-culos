@@ -1,0 +1,12 @@
+{
+  "name": "frotas-db-tests",
+  "private": true,
+  "type": "module",
+  "description": "Testes de RLS/migrations (executa o SQL real em um Postgres embutido - PGlite)",
+  "scripts": { "test": "vitest run" },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@types/node": "^22.0.0",
+    "vitest": "^3.2.0"
+  }
+}

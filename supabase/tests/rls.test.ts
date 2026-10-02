@@ -5,7 +5,7 @@
  * plataforma Supabase e valida, por role, o que cada usuário consegue ver/alterar.
  *   npm test
  */
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import { beforeAll, describe, expect, it } from 'vitest';
 
@@ -67,7 +67,11 @@ const rows = async <T = Record<string, unknown>>(sql: string, params: unknown[] 
 beforeAll(async () => {
   db = new PGlite();
   await db.exec(read('./supabase-shim.sql'));
-  await db.exec(read('../migrations/20260101000000_init.sql'));
+  // aplica TODAS as migrations, em ordem
+  const migrationsDir = new URL('../migrations/', import.meta.url);
+  for (const file of readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort()) {
+    await db.exec(readFileSync(new URL(file, migrationsDir), 'utf8'));
+  }
 
   await db.exec(`
     insert into auth.users (id, email) values
@@ -278,6 +282,35 @@ describe('salvar_checklist (RPC atômica)', () => {
     await as(SUP_SP, async () => {
       expect((await db.query(`update public.checklists set status = 'ok' where id = $1`, [CK])).affectedRows).toBe(0);
       expect((await db.query(`delete from public.checklist_fotos where checklist_id = $1`, [CK])).affectedRows).toBe(0);
+    });
+  });
+});
+
+describe('rascunhos do checklist', () => {
+  it('cada usuário lê/grava somente o próprio rascunho (nem o admin lê o dos outros)', async () => {
+    await as(SUP_SP, async () => {
+      await db.query(`insert into public.checklist_rascunhos (dados) values ('{"passo": 3}'::jsonb)`); // user_id = auth.uid()
+      // upsert (mesmo usuário) atualiza em vez de duplicar
+      await db.query(
+        `insert into public.checklist_rascunhos (user_id, dados) values ($1, '{"passo": 5}'::jsonb)
+         on conflict (user_id) do update set dados = excluded.dados`,
+        [SUP_SP],
+      );
+      expect(await rows('select dados from public.checklist_rascunhos')).toEqual([{ dados: { passo: 5 } }]);
+      // não grava em nome de outro usuário
+      await expect(
+        db.query(`insert into public.checklist_rascunhos (user_id, dados) values ($1, '{}'::jsonb)`, [SUP_SP2]),
+      ).rejects.toThrow(/row-level security/);
+    });
+    await as(SUP_SP2, async () => {
+      expect(await rows('select 1 from public.checklist_rascunhos')).toHaveLength(0);
+      expect((await db.query(`delete from public.checklist_rascunhos`)).affectedRows).toBe(0);
+    });
+    await as(ADMIN, async () => {
+      expect(await rows('select 1 from public.checklist_rascunhos')).toHaveLength(0);
+    });
+    await as(null, async () => {
+      await expect(rows('select 1 from public.checklist_rascunhos')).rejects.toThrow(/permission denied/);
     });
   });
 });

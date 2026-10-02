@@ -1,12 +1,17 @@
-node_modules
-.next
-out
-build
-next-env.d.ts
-*.tsbuildinfo
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Segredos (NUNCA versionar)
 .env
 .env.*
-!.env.example
-.vercel
-npm-debug.log*
+.streamlit/secrets.toml
+
+# Node (apenas os testes de banco em supabase/tests)
+node_modules/
+
 .DS_Store

@@ -1,0 +1,6 @@
+# versões mínimas = as versões com as quais o app foi testado
+streamlit>=1.64,<2
+supabase>=2.31,<3
+pillow>=11
+streamlit-image-coordinates>=0.4
+tzdata
