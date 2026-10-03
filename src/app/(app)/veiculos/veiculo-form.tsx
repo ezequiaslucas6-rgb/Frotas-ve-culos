@@ -94,7 +94,7 @@ export function VeiculoForm({ filiais, filialFixaId, veiculo, fotoUrl, documento
         <CardHeader>
           <CardTitle>Fotos e documento</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4">
+        <CardContent className="grid grid-cols-1 gap-4">
           <FileUpload
             name="foto_geral_path"
             label="Foto geral do veículo"

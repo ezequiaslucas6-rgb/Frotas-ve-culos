@@ -60,7 +60,7 @@ export function Donut({ fatias, totalRotulo }: { fatias: Fatia[]; totalRotulo: s
           <span className="max-w-[110px] text-xs text-muted-foreground">{destaque ? destaque.rotulo : totalRotulo}</span>
         </div>
       </div>
-      <ul className="grid w-full gap-2">
+      <ul className="grid w-full grid-cols-1 gap-2">
         {fatias.map((f) => (
           <li
             key={f.chave}

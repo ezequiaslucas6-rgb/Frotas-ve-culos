@@ -400,15 +400,22 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   );
 }
 
+/** "Manutenção/Avaria" pode quebrar depois da barra (sem isso a palavra inteira empurra o ícone para fora do cartão). */
+const quebraAposBarra = (texto: string) =>
+  texto.split('/').flatMap((parte, i, partes) => (i < partes.length - 1 ? [`${parte}/`, <wbr key={i} />] : [parte]));
+
 function StatTile({ valor, rotulo, pct, cor, icone }: { valor: number; rotulo: string; pct: number; cor: string; icone: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-4 rounded-2xl bg-card p-5">
-      <div className="flex items-start justify-between gap-3">
-        <div>
+    <div className="flex min-w-0 flex-col gap-4 rounded-2xl bg-card p-4 sm:p-5">
+      <div className="flex items-start justify-between gap-2 sm:gap-3">
+        <div className="min-w-0">
           <p className="text-3xl font-bold tracking-tight">{valor}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">{rotulo}</p>
+          <p className="mt-0.5 text-xs break-words text-muted-foreground">{quebraAposBarra(rotulo)}</p>
         </div>
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl [&_svg]:size-5" style={{ color: cor, background: `color-mix(in oklab, ${cor} 16%, transparent)` }}>
+        <span
+          className="flex size-9 shrink-0 items-center justify-center rounded-xl sm:size-10 [&_svg]:size-5"
+          style={{ color: cor, background: `color-mix(in oklab, ${cor} 16%, transparent)` }}
+        >
           {icone}
         </span>
       </div>

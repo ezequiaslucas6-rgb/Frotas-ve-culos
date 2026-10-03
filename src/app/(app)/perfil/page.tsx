@@ -84,7 +84,7 @@ export default async function PerfilPage() {
               <CardTitle>Meu cadastro</CardTitle>
             </CardHeader>
             <CardContent>
-              <dl className="grid gap-3 text-sm">
+              <dl className="grid grid-cols-1 gap-3 text-sm">
                 <div>
                   <dt className="text-xs text-muted-foreground">CPF</dt>
                   <dd className="font-semibold">{formatCpf(cadastro.cpf)}</dd>

@@ -30,16 +30,21 @@ export default async function FiliaisPage() {
           ) : (
             <ul className="divide-y divide-border/60 overflow-hidden rounded-2xl bg-card">
               {(filiais ?? []).map((f) => (
-                <li key={f.id} className="flex items-center justify-between gap-3 p-4">
-                  <div>
-                    <p className="font-medium">
+                <li key={f.id} className="flex items-center justify-between gap-2 p-4">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">
                       {f.nome_cidade}/{f.uf}
                     </p>
                     <p className="text-xs text-muted-foreground">{totalPorFilial.get(f.id) ?? 0} veículo(s)</p>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <Link href={`/filiais/${f.id}/editar`} className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
-                      <Pencil /> Editar
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Link
+                      href={`/filiais/${f.id}/editar`}
+                      aria-label={`Editar ${f.nome_cidade}/${f.uf}`}
+                      className={buttonVariants({ variant: 'ghost', size: 'sm' })}
+                    >
+                      {/* em telas bem estreitas fica só o ícone */}
+                      <Pencil /> <span className="max-[359px]:sr-only">Editar</span>
                     </Link>
                     <DeleteButton
                       action={excluirFilial}

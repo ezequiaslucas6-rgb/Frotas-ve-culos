@@ -230,9 +230,9 @@ export default async function VeiculoPage({ params }: { params: Promise<{ id: st
       </div>
 
       <Card>
-        <CardHeader className="flex-row items-center justify-between">
+        <CardHeader className="flex-row flex-wrap items-center justify-between gap-y-1">
           <CardTitle>Abastecimentos</CardTitle>
-          <div className="flex gap-1">
+          <div className="flex flex-wrap gap-1">
             <Link href={`/abastecimentos?veiculo=${v.id}`} className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
               Ver todos
             </Link>
