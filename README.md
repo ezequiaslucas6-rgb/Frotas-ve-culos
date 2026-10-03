@@ -60,7 +60,29 @@ Subdomínio: `*.sslip.io` aponta sozinho para o IP do nome, sem configurar DNS. 
 | `CRON_SECRET` | protege `/api/cron/alertas` |
 | `FROTAS_PORTA` | porta local do container (padrão 3010) |
 
-## 3. Desenvolvimento
+## 3. App Android (APK)
+
+O app (`android/`) é o próprio sistema dentro de um WebView, ajustado ao celular: respeita a barra de status, o recorte
+da câmera, a barra de navegação e o teclado; tira as fotos (checklist, CNH, cupom) com a câmera do aparelho; abre
+WhatsApp, telefone e PDFs no app certo; o botão *voltar* volta as telas; mostra uma tela própria quando falta internet; e
+mantém o login entre aberturas. Como ele carrega o site da VPS, **toda atualização do sistema chega ao app sem reinstalar**.
+
+**Baixar:** a cada mudança em `android/`, o GitHub Actions (*App Android (APK)*) compila e publica em
+**Releases → App Android** o arquivo `frotas.apk`
+(`https://github.com/ezequiaslucas6-rgb/Frotas-ve-culos/releases/download/app-android/frotas.apk`). No celular: abra o
+link, baixe, toque no arquivo e permita *instalar apps desta fonte*. Para gerar de novo (ex.: outro endereço), use
+*Actions → App Android (APK) → Run workflow* (o botão aparece quando o workflow está na branch principal).
+
+**Atualizar o APK por cima (opcional):** sem configuração, cada APK sai com uma chave de assinatura nova e, para trocar de
+versão, é preciso desinstalar a anterior. Para atualizações por cima, crie uma chave **uma vez** e guarde-a com cuidado:
+```bash
+keytool -genkeypair -v -keystore frotas.jks -alias frotas -keyalg RSA -keysize 2048 -validity 10000
+base64 -w0 frotas.jks   # copie a saída
+```
+e cadastre em *Settings → Secrets and variables → Actions*: `ANDROID_KEYSTORE_BASE64` (a saída acima),
+`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`frotas`) e `ANDROID_KEY_PASSWORD`. Nunca coloque o `.jks` no repositório.
+
+## 4. Desenvolvimento
 ```bash
 npm install
 cp .env.example .env.local   # preencha

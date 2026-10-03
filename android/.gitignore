@@ -1,0 +1,8 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+# chaves de assinatura NUNCA vão para o repositório (use os secrets do GitHub)
+*.jks
+*.keystore

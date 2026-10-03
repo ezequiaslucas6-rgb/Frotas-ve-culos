@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- mesmas cores do tema escuro do site (src/app/globals.css) -->
+    <color name="fundo">#1D1E26</color>
+    <color name="texto">#F1F1F5</color>
+    <color name="texto_suave">#9294A3</color>
+    <color name="primaria">#7B6CF6</color>
+    <color name="trilho">#6C5CE7</color>
+    <color name="branco">#FFFFFF</color>
+</resources>

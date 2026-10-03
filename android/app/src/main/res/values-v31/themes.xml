@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Tema.Frotas" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/fundo</item>
+        <item name="android:colorBackground">@color/fundo</item>
+        <item name="android:colorAccent">@color/primaria</item>
+        <item name="android:colorPrimary">@color/trilho</item>
+        <item name="android:statusBarColor">@color/fundo</item>
+        <item name="android:navigationBarColor">@color/fundo</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <!-- tela de abertura (Android 12+): fundo do app + ícone -->
+        <item name="android:windowSplashScreenBackground">@color/fundo</item>
+    </style>
+</resources>
