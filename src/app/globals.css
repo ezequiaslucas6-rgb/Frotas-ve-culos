@@ -124,3 +124,10 @@
 @utility pt-safe {
   padding-top: env(safe-area-inset-top);
 }
+
+/* Trava de segurança: nada pode deixar a página mais larga que a tela (no celular isso faz o
+   navegador "encolher" o site inteiro). clip não cria rolagem, então o cabeçalho fixo continua funcionando. */
+html,
+body {
+  overflow-x: clip;
+}

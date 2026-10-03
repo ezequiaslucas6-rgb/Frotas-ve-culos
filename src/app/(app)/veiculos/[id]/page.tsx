@@ -85,7 +85,7 @@ export default async function VeiculoPage({ params }: { params: Promise<{ id: st
         }
       />
 
-      <div className="grid gap-6 lg:grid-cols-[2fr_3fr]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         <Card className="overflow-hidden py-0">
           <div className="flex aspect-[4/3] items-center justify-center bg-muted text-muted-foreground">
             {fotoUrl ? (
@@ -165,7 +165,7 @@ export default async function VeiculoPage({ params }: { params: Promise<{ id: st
         </Card>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>Checklists recentes</CardTitle>

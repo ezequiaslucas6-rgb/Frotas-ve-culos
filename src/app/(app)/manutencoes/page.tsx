@@ -90,7 +90,7 @@ export default async function ManutencoesPage({ searchParams }: { searchParams: 
         {isAdmin ? <FilialFilter filiais={filiais ?? []} /> : null}
       </FormFiltros>
 
-      <section aria-label="Custos" className="grid gap-3 sm:grid-cols-3">
+      <section aria-label="Custos" className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Card className="gap-1 py-4">
           <CardContent>
             <p className="text-xs text-muted-foreground">Custo total</p>

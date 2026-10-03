@@ -57,7 +57,7 @@ export function AbastecimentoForm({ veiculos, motoristas, veiculoInicial, combus
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-5" noValidate>
       <Card>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
+        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {veiculos.length === 1 && veiculo ? (
             <div className="flex items-center justify-between gap-3 rounded-xl bg-raised px-3.5 py-3 sm:col-span-2">
               <input type="hidden" name="veiculo_id" value={veiculo.id} />

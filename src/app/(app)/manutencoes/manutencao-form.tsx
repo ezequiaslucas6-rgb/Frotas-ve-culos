@@ -33,7 +33,7 @@ export function ManutencaoForm({ veiculos, veiculoInicial, hoje }: { veiculos: V
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-6" noValidate>
       <Card>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
+        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Veículo" htmlFor="veiculo_id" required error={fieldError('veiculo_id')} className="sm:col-span-2">
             <Select
               id="veiculo_id"

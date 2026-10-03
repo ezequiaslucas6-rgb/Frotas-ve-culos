@@ -40,7 +40,7 @@ export function VeiculoForm({ filiais, filialFixaId, veiculo, fotoUrl, documento
         <CardHeader>
           <CardTitle>Identificação</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
+        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {filiais && !editing ? (
             <Field label="Filial" htmlFor="filial_id" required error={fieldError('filial_id')} className="sm:col-span-2">
               <Select id="filial_id" name="filial_id" required value={filialId} onChange={(e) => setFilialId(e.target.value)}>
@@ -125,7 +125,7 @@ export function VeiculoForm({ filiais, filialFixaId, veiculo, fotoUrl, documento
         <CardHeader>
           <CardTitle>Quilometragem e plano de revisão</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
+        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="KM atual" htmlFor="km_atual" required error={fieldError('km_atual')}>
             <Input id="km_atual" name="km_atual" type="number" inputMode="numeric" min={0} required defaultValue={veiculo?.km_atual ?? 0} />
           </Field>

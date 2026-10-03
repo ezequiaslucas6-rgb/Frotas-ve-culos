@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: 'Entrar' };
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
   const { next } = await searchParams;
   return (
-    <main className="grid min-h-dvh md:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+    <main className="grid grid-cols-1 min-h-dvh md:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
       <section className="relative hidden flex-col justify-between overflow-hidden bg-rail p-12 text-white md:flex">
         <span className="flex size-12 items-center justify-center rounded-2xl bg-white text-rail">
           <Truck className="size-6" strokeWidth={2.4} />

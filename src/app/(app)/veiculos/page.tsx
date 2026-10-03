@@ -77,7 +77,7 @@ export default async function VeiculosPage({ searchParams }: { searchParams: Pro
           }
         />
       ) : (
-        <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {veiculos.map((v) => (
             <li key={v.id}>
               <Link

@@ -23,7 +23,7 @@ export default async function FiliaisPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title="Filiais" description="Cidades/unidades da operação. Cada supervisor é vinculado a uma única filial." />
-      <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div>
           {(filiais ?? []).length === 0 ? (
             <EmptyState icon={<Building2 />} title="Nenhuma filial cadastrada" description="Adicione a primeira filial ao lado." />

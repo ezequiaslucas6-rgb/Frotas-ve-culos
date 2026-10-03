@@ -41,7 +41,7 @@ export function MotoristaForm({ filiais, filialFixaId, motorista, cnhFrenteUrl, 
         <CardHeader>
           <CardTitle>Dados pessoais</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
+        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {filiais && !editing ? (
             <Field label="Filial" htmlFor="filial_id" required error={fieldError('filial_id')} className="sm:col-span-2">
               <Select id="filial_id" name="filial_id" required value={filialId} onChange={(e) => setFilialId(e.target.value)}>
@@ -90,7 +90,7 @@ export function MotoristaForm({ filiais, filialFixaId, motorista, cnhFrenteUrl, 
           <CardTitle>CNH</CardTitle>
           <CardDescription>Dados do documento e fotos de frente e verso (ou o PDF da CNH digital).</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
+        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Nº de registro" htmlFor="cnh" required error={fieldError('cnh')} hint="11 dígitos">
             <MaskedInput id="cnh" name="cnh" mask="cnh" defaultValue={motorista?.cnh} required aria-invalid={!!fieldError('cnh')} />
           </Field>
@@ -147,7 +147,7 @@ export function MotoristaForm({ filiais, filialFixaId, motorista, cnhFrenteUrl, 
               placeholder="Ex.: uso obrigatório de lentes corretivas"
             />
           </Field>
-          <div className="grid gap-4 sm:col-span-2 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-2">
             <FileUpload
               name="cnh_frente_path"
               label="CNH — frente (ou PDF da CNH digital)"

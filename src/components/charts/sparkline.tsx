@@ -101,18 +101,20 @@ export function Sparkline({ pontos, titulo, altura = 190 }: SparklineProps) {
           <span className="opacity-70">{p.rotuloLongo}</span> · <strong>{p.texto}</strong>
         </div>
       ) : null}
-      {/* versão em tabela para leitores de tela */}
-      <table className="sr-only">
-        <caption>{titulo}</caption>
-        <tbody>
-          {pontos.map((pt) => (
-            <tr key={pt.rotuloLongo}>
-              <th scope="row">{pt.rotuloLongo}</th>
-              <td>{pt.texto}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {/* tabela para leitores de tela; o sr-only fica num <div>: <table> ignora width e alargaria a página */}
+      <div className="sr-only">
+        <table>
+          <caption>{titulo}</caption>
+          <tbody>
+            {pontos.map((pt) => (
+              <tr key={pt.rotuloLongo}>
+                <th scope="row">{pt.rotuloLongo}</th>
+                <td>{pt.texto}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </figure>
   );
 }

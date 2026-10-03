@@ -73,7 +73,7 @@ export default async function MotoristasPage({ searchParams }: { searchParams: P
           description={q ? 'Tente outro termo de busca.' : 'Cadastre os motoristas da filial para vinculá-los aos checklists.'}
         />
       ) : (
-        <ul className="grid gap-3 md:grid-cols-2">
+        <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {(motoristas ?? []).map((m) => (
             <li key={m.id} className="flex flex-col gap-3 rounded-2xl bg-card p-4">
               <div className="flex items-start justify-between gap-2">

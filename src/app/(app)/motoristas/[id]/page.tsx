@@ -64,7 +64,7 @@ export default async function MotoristaPage({ params }: { params: Promise<{ id: 
         }
       />
 
-      <div className="grid gap-6 lg:grid-cols-[3fr_2fr]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <CnhCard motorista={m} urls={urlsCnh} hoje={toISODate()} />
 
         <div className="flex flex-col gap-6">

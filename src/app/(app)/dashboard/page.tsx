@@ -183,7 +183,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </p>
       ) : null}
 
-      <div className="grid gap-5 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <Card className="gap-2 px-6 pt-6 pb-4 lg:col-span-2">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
@@ -217,7 +217,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </Card>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <section aria-label="Indicadores" className="grid grid-cols-2 gap-4 lg:col-span-2">
           <StatTile valor={liberados} rotulo="Liberados" pct={pct(liberados)} cor="var(--success)" icone={<CircleCheck />} />
           <StatTile valor={atencao} rotulo="Em atenção" pct={pct(atencao)} cor="var(--warning)" icone={<TriangleAlert />} />
@@ -259,7 +259,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                       </div>
                     </td>
                     <td className="py-2.5 text-xs text-muted-foreground">{descreverAlerta(v.alerta)}</td>
-                    <td className="py-2.5 text-right text-xs">{formatKm(v.km_atual)}</td>
+                    <td className="py-2.5 text-right text-xs whitespace-nowrap">{formatKm(v.km_atual)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -273,7 +273,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </Card>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <Card className="px-0">
           <CardHeader>
             <CardTitle>Requer atenção</CardTitle>

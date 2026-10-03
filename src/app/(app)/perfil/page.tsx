@@ -46,7 +46,7 @@ export default async function PerfilPage() {
         </div>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -77,7 +77,7 @@ export default async function PerfilPage() {
       </div>
 
       {cadastro ? (
-        <div className="grid gap-6 lg:grid-cols-[3fr_2fr]">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
           <CnhCard motorista={cadastro} urls={urlsCnh} hoje={toISODate()} />
           <Card>
             <CardHeader>

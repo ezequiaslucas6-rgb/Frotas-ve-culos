@@ -56,7 +56,7 @@ export default async function ChecklistPage({ params }: { params: Promise<{ id: 
       />
 
       <Card>
-        <CardContent className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+        <CardContent className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
           <div>
             <p className="flex items-center gap-1 text-muted-foreground">
               <User className="size-4" /> Motorista
@@ -101,7 +101,7 @@ export default async function ChecklistPage({ params }: { params: Promise<{ id: 
         </CardContent>
       </Card>
 
-      <ul className="grid gap-4 md:grid-cols-2">
+      <ul className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {CHECKLIST_ETAPAS.map((etapa, i) => {
           const foto = porCategoria.get(etapa.categoria);
           const url = foto ? urls[foto.foto_url] : undefined;
