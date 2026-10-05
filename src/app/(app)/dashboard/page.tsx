@@ -227,7 +227,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             valor={verificados}
             rotulo={`Checklist no mês · de ${total}`}
             pct={pct(verificados)}
-            cor="var(--primary)"
+            cor="var(--icone)"
             icone={<ClipboardCheck />}
           />
         </section>

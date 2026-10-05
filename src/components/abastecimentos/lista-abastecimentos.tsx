@@ -45,7 +45,7 @@ export function ListaAbastecimentos({
         const kml = consumo[a.id];
         return (
           <li key={a.id} className="flex items-start gap-3 py-3.5">
-            <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
+            <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl bg-icone/15 text-icone">
               <Fuel className="size-[18px]" />
             </span>
             <div className="min-w-0 flex-1">

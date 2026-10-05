@@ -68,7 +68,7 @@ export function EtapaCaptura({ titulo, estado, somenteProblema = false, onFile, 
         <div className="flex flex-col items-center gap-4 rounded-2xl border-2 border-dashed border-border bg-card px-4 py-10 text-center">
           {ocupado ? (
             <>
-              <Loader2 className="size-12 animate-spin text-primary" />
+              <Loader2 className="size-12 animate-spin text-icone" />
               <p className="text-sm text-muted-foreground" role="status">
                 {estado.fase === 'processando' ? 'Comprimindo foto…' : 'Enviando foto…'}
               </p>

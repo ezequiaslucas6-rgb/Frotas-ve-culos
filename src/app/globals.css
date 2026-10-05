@@ -24,6 +24,7 @@
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-rail: var(--rail);
+  --color-icone: var(--icone);
   --color-secondary: var(--raised);
   --color-secondary-foreground: var(--foreground);
   --color-muted: var(--raised);
@@ -57,10 +58,12 @@
   --raised: #eeeef4;
   --muted-foreground: #6b6d7c;
   --border: #e3e3eb;
-  --accent: #ecebfd;
-  --primary: #6c5ce7;
+  --accent: #e6f2fb;
+  /* marca: azul #007FD6 (botões, trilho, destaques) e #0097FF nos ícones */
+  --primary: #007fd6;
   --primary-foreground: #ffffff;
-  --rail: #6c5ce7;
+  --rail: #007fd6;
+  --icone: #0097ff;
   --success: #1f9467;
   --success-text: #157350;
   --warning: #c08414;
@@ -70,7 +73,7 @@
   color-scheme: light;
 }
 
-/* Escuro (padrão): grafite + roxo. Status validado contra o card #2a2b35. */
+/* Escuro (padrão): grafite + azul. Status validado contra o card #2a2b35. */
 .dark {
   --background: #1d1e26;
   --foreground: #f1f1f5;
@@ -78,10 +81,11 @@
   --raised: #33343f;
   --muted-foreground: #9294a3;
   --border: #383946;
-  --accent: #34315a;
-  --primary: #7b6cf6;
+  --accent: #223c55;
+  --primary: #007fd6;
   --primary-foreground: #ffffff;
-  --rail: #6c5ce7;
+  --rail: #007fd6;
+  --icone: #0097ff;
   --success: #2ea97a;
   --success-text: #4cc796;
   --warning: #c28518;

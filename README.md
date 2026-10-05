@@ -98,7 +98,8 @@ cd supabase/tests && npm ci && npm test   # migrations + RLS no Postgres embutid
 
 ## Visual
 
-Tema **escuro por padrão** (grafite + roxo), com alternância para **claro** — útil no sol, no pátio. Trilho lateral de
+Tema **escuro por padrão** (grafite + azul **#007FD6**; ícones da marca em **#0097FF**), com alternância para **claro** — útil
+no sol, no pátio. Login da marca **Rodar** com a paleta roxo → azul → verde mesclada em ondas. Trilho lateral de
 ícones no desktop; no celular, barra inferior com o botão de câmera ao centro. Fonte *Plus Jakarta Sans* (servida pelo
 próprio app, sem depender do Google). As cores de status (verde/âmbar/vermelho) foram validadas para contraste e
 daltonismo nos dois temas e sempre aparecem com ícone + texto.

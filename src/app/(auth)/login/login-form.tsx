@@ -1,6 +1,5 @@
 'use client';
 
-import { Truck } from 'lucide-react';
 import { signIn } from '@/actions/auth';
 import { Field } from '@/components/ui/field';
 import { FormMessage, SubmitButton } from '@/components/ui/form-feedback';
@@ -12,9 +11,6 @@ export function LoginForm({ next }: { next?: string }) {
 
   return (
     <div className="w-full max-w-sm">
-      <span className="mb-8 flex size-12 items-center justify-center rounded-2xl bg-rail text-white md:hidden">
-        <Truck className="size-6" strokeWidth={2.4} />
-      </span>
       <h2 className="text-2xl font-bold tracking-tight">Entrar</h2>
       <p className="mt-1 text-sm text-muted-foreground">Use o e-mail e a senha cadastrados pelo administrador.</p>
       <form onSubmit={onSubmit} className="mt-8 flex flex-col gap-5">

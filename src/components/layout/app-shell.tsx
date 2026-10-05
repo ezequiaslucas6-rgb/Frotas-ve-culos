@@ -28,7 +28,7 @@ const isActive = (pathname: string, href: string, acaoHref: string) =>
 
 function Logo({ className }: { className?: string }) {
   return (
-    <span className={cn('flex size-10 items-center justify-center rounded-xl bg-white/95 text-rail', className)}>
+    <span className={cn('flex size-10 items-center justify-center rounded-xl bg-white/95 text-icone', className)}>
       <Truck className="size-5" strokeWidth={2.4} />
     </span>
   );
@@ -86,7 +86,7 @@ export function AppShell({ nome, papel, role, filialLabel, avatarUrl, children }
           href={acao.href}
           aria-label={acao.label}
           title={acao.label}
-          className="flex size-12 items-center justify-center rounded-full bg-white text-rail transition-transform hover:scale-105"
+          className="flex size-12 items-center justify-center rounded-full bg-white text-icone transition-transform hover:scale-105"
         >
           <AcaoIcon className="size-5" strokeWidth={2.4} />
         </Link>
@@ -101,7 +101,7 @@ export function AppShell({ nome, papel, role, filialLabel, avatarUrl, children }
       >
         <div className="flex h-16 items-center gap-3">
           <Link href={home} className="md:hidden" aria-label="Início">
-            <Logo className="size-9 bg-rail text-white" />
+            <Logo className="size-9 bg-icone text-white" />
           </Link>
           <div className="leading-tight">
             <p className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">{filialLabel ?? 'Todas as filiais'}</p>
@@ -141,7 +141,7 @@ export function AppShell({ nome, papel, role, filialLabel, avatarUrl, children }
             <Link
               href={acao.href}
               aria-label={acao.label}
-              className="mx-auto -mt-7 flex size-14 items-center justify-center rounded-full bg-rail text-white ring-4 ring-background"
+              className="mx-auto -mt-7 flex size-14 items-center justify-center rounded-full bg-icone text-white ring-4 ring-background"
             >
               <AcaoIcon className="size-6" />
             </Link>
@@ -214,7 +214,7 @@ function BottomLink({ href, label, ativo, icon }: { href: string; label: string;
       href={href}
       prefetch
       aria-current={ativo ? 'page' : undefined}
-      className={cn('flex h-16 flex-col items-center justify-center gap-1 text-[11px] font-medium text-muted-foreground', ativo && 'text-primary')}
+      className={cn('flex h-16 flex-col items-center justify-center gap-1 text-[11px] font-medium text-muted-foreground', ativo && 'text-primary [&_svg]:text-icone')}
     >
       {icon}
       {label}

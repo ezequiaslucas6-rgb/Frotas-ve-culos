@@ -30,7 +30,7 @@ function Arquivo({ titulo, path, url }: { titulo: string; path: string | null; u
     </span>
   ) : pdf || !url ? (
     <span className="flex flex-col items-center gap-1 text-xs font-medium text-muted-foreground">
-      <FileText className="size-7 text-primary" />
+      <FileText className="size-7 text-icone" />
       Abrir PDF
     </span>
   ) : (
@@ -77,7 +77,7 @@ export function CnhCard({
     <Card className={className}>
       <CardHeader className="flex-row items-center justify-between gap-3">
         <CardTitle className="flex items-center gap-2">
-          <IdCard className="size-4 text-primary" /> CNH
+          <IdCard className="size-4 text-icone" /> CNH
         </CardTitle>
         <CnhBadge situacao={situacao} detalhe />
       </CardHeader>

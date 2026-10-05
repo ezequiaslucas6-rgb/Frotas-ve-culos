@@ -4,7 +4,9 @@
     <color name="fundo">#1D1E26</color>
     <color name="texto">#F1F1F5</color>
     <color name="texto_suave">#9294A3</color>
-    <color name="primaria">#7B6CF6</color>
-    <color name="trilho">#6C5CE7</color>
+    <color name="primaria">#007FD6</color>
+    <color name="trilho">#007FD6</color>
+    <!-- ícones da marca (fundo do ícone do app) -->
+    <color name="icone">#0097FF</color>
     <color name="branco">#FFFFFF</color>
 </resources>

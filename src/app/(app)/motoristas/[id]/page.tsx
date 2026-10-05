@@ -71,7 +71,7 @@ export default async function MotoristaPage({ params }: { params: Promise<{ id: 
           <Card>
             <CardHeader className="flex-row items-center justify-between gap-3">
               <CardTitle className="flex items-center gap-2">
-                <Smartphone className="size-4 text-primary" /> Acesso ao app
+                <Smartphone className="size-4 text-icone" /> Acesso ao app
               </CardTitle>
               <MotoristaStatusBadge status={m.status} />
             </CardHeader>
@@ -83,7 +83,7 @@ export default async function MotoristaPage({ params }: { params: Promise<{ id: 
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Truck className="size-4 text-primary" /> Veículos sob responsabilidade
+                <Truck className="size-4 text-icone" /> Veículos sob responsabilidade
               </CardTitle>
             </CardHeader>
             <CardContent>

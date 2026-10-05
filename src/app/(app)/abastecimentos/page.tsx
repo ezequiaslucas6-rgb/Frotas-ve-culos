@@ -189,7 +189,7 @@ function Resumo({ icone, rotulo, valor }: { icone: React.ReactNode; rotulo: stri
         <p className="truncate text-xl font-bold tracking-tight sm:text-2xl">{valor}</p>
         <p className="mt-0.5 text-xs text-muted-foreground">{rotulo}</p>
       </div>
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary [&_svg]:size-[18px]">
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-icone/15 text-icone [&_svg]:size-[18px]">
         {icone}
       </span>
     </div>

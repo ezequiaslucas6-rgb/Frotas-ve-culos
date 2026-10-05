@@ -50,7 +50,7 @@ export default async function PerfilPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <UserRound className="size-4 text-primary" /> Dados de exibição
+              <UserRound className="size-4 text-icone" /> Dados de exibição
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -67,7 +67,7 @@ export default async function PerfilPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <KeyRound className="size-4 text-primary" /> Senha
+              <KeyRound className="size-4 text-icone" /> Senha
             </CardTitle>
           </CardHeader>
           <CardContent>

@@ -68,7 +68,7 @@ export function AcessoApp({ motoristaId, email, temAcesso, inativo }: AcessoAppP
       >
         <input type="hidden" name="motorista_id" value={motoristaId} />
         <div className="flex items-start gap-3 text-sm text-muted-foreground">
-          <Smartphone className="mt-0.5 size-5 shrink-0 text-primary" />
+          <Smartphone className="mt-0.5 size-5 shrink-0 text-icone" />
           <p>
             Com o acesso, o motorista entra pelo celular com o e-mail <strong className="text-foreground">{email}</strong>, vê o
             veículo sob a responsabilidade dele e lança os abastecimentos.
