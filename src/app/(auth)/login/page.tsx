@@ -20,8 +20,18 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
               <img src="/marca/volante.png" alt="" width={256} height={256} className="size-12 drop-shadow-sm md:size-16" />
               Rodar
             </p>
-            {/* celular: o logo N vai na linha da marca */}
-            <LogoN className="size-14 md:hidden" />
+            {/* celular: o logo N vai na linha da marca. Montado como o volante (imagem simples,
+                sem filtro, transform ou position): o Safari do iPhone não pintava o N com a sombra
+                + posição relativa ao lado dos anéis deslocados por transform. */}
+            <span aria-hidden className="relative shrink-0 md:hidden">
+              <svg className="absolute -inset-[80%] -z-10 text-white/15" viewBox="0 0 200 200" fill="none" stroke="currentColor" strokeWidth="0.6">
+                <circle cx="100" cy="100" r="98" />
+                <circle cx="100" cy="100" r="76" />
+                <circle cx="100" cy="100" r="54" />
+              </svg>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/marca/logo-n.png" alt="" width={472} height={497} className="block size-14 object-contain" />
+            </span>
           </div>
           <h1 className="mt-4 text-3xl leading-tight font-bold tracking-tight md:mt-5 md:text-[2.75rem]">Sua frota, em dia.</h1>
         </div>
