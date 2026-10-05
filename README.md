@@ -19,10 +19,10 @@ roda na **sua VPS** em Docker, atrás do Nginx, num subdomínio com HTTPS.
    3. `20260103000000_papel_motorista.sql` (uma linha só; precisa rodar **sozinho**, antes do próximo)
    4. `20260103000100_motoristas_acesso.sql`
    5. `20260105000000_checklist_tipos.sql` (checklists diário/semanal/mensal)
+   6. `20260106000000_checklist_motorista.sql` (o motorista faz o checklist dos próprios veículos)
 
    **Já tinha o sistema instalado?** Rode apenas o que ainda não rodou (nessa ordem, separados) e depois atualize o
-   app na VPS. Quem já está com os itens 1–4 roda só o item 5: os checklists antigos viram "diário" e continuam
-   com as fotos.
+   app na VPS. Quem já está com os itens 1–5 roda só o item 6.
 2. Execute `supabase/seed.sql` (filiais de exemplo).
 3. **Primeiro Administrador Geral (obrigatório).** Crie o usuário em *Authentication → Users → Add user* (marque
    *Auto Confirm User*) e vincule-o como admin:
@@ -112,7 +112,7 @@ daltonismo nos dois temas e sempre aparecem com ícone + texto.
 | Veículos | CRUD global | lê, cria e edita **da própria filial** | lê **só os veículos em que é o responsável** |
 | Motoristas (e CNH) | CRUD global | lê, cria e edita da própria filial | lê só o próprio cadastro |
 | Manutenções / custos | CRUD global | da própria filial | — |
-| Checklists | CRUD global | lê e cria da própria filial (imutáveis) | — |
+| Checklists | CRUD global | lê e cria da própria filial (imutáveis) | faz nos próprios veículos, em seu nome; lê só os seus |
 | Abastecimentos | todos; corrige e exclui | lê e lança da própria filial | lança nos próprios veículos; lê só os seus |
 | Exclusões | sim | não (para desligar um motorista: status *Inativo*) | não |
 
@@ -120,7 +120,7 @@ O isolamento é garantido no banco: RLS em todas as tabelas, FKs compostas `(vei
 `(motorista_id, filial_id)` que impedem referências entre filiais, `profiles` gravável só pelo Admin (nome e foto mudam
 por uma função que altera só esses dois campos), Storage privado por pasta de filial e view com `security_invoker`. O
 `src/proxy.ts` valida o login (assinatura do JWT) em toda requisição; cada página e Server Action exige o papel certo
-(`requireSession` é fechado para o motorista por padrão, que só abre *Meu veículo*, *Abastecimentos* e *Meu perfil*;
+(`requireSession` é fechado para o motorista por padrão, que só abre *Meu veículo*, *Checklists*, *Abastecimentos* e *Meu perfil*;
 `requireAdmin` para as telas do admin) — e a RLS é a barreira final (testes em `supabase/tests/`).
 
 ## Acesso do motorista
@@ -128,8 +128,9 @@ por uma função que altera só esses dois campos), Storage privado por pasta de
 1. Cadastre o motorista (com a **CNH**) e, na edição do veículo, escolha o **motorista responsável**.
 2. Abra o motorista → **Acesso ao app** → *Gerar* → **Liberar acesso**. O login é o e-mail do cadastro; anote a senha
    provisória e repasse (ele pode trocá-la em *Meu perfil*). Supervisores liberam o acesso dos motoristas da própria filial.
-3. No celular o motorista vê **Meu veículo** (placa, KM, próxima revisão, documento CRLV, consumo médio e alerta da CNH) e
-   o botão central **Registrar abastecimento**.
+3. No celular o motorista vê **Meu veículo** (placa, KM, próxima revisão, documento CRLV, consumo médio e alerta da CNH),
+   o botão central da **câmera**, que abre o **checklist** (veículo e motorista já preenchidos), e *Registrar abastecimento*
+   em *Meu veículo* e no *Histórico*.
 
 Motorista com status *Inativo* perde o acesso na hora. *Remover acesso* apaga o login e mantém o histórico.
 
@@ -192,7 +193,7 @@ Semáforo: 🔴 Manutenção/Avaria · 🟡 Atenção · 🟢 Liberado (detalhes
 ## Limites conhecidos
 - Fotos de checklists abandonados, cupons trocados antes do envio e fotos de perfil antigas ficam no Storage
   (usuários não excluem arquivos); um job de limpeza pode vir depois.
-- O checklist continua sendo feito pelo supervisor; o motorista não registra checklists.
+- O motorista faz checklist só dos veículos em que é o responsável; o supervisor/admin, de qualquer veículo da filial.
 - Mudar um modelo vale para os próximos checklists; um rascunho em andamento usa o modelo da hora em que a
   tela foi aberta (se o modelo mudar no meio, o envio avisa qual foto falta).
 - Os caches de perfil e de URLs assinadas ficam na memória do container (um único processo, como na VPS); ao reiniciar,

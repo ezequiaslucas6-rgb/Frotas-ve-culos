@@ -29,6 +29,7 @@ create table storage.objects (
   bucket_id text references storage.buckets (id),
   name      text,
   owner     uuid,
+  owner_id  text, -- quem enviou (o Storage preenche com o uid do usuário)
   created_at timestamptz default now()
 );
 alter table storage.objects enable row level security;

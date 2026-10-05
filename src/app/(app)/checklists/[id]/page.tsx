@@ -20,7 +20,8 @@ export const metadata: Metadata = { title: 'Checklist' };
 
 export default async function ChecklistPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { supabase, isAdmin } = await requireSession();
+  // motorista: a RLS só devolve checklists feitos em seu nome
+  const { supabase, isAdmin, isMotorista } = await requireSession({ motorista: true });
 
   const [{ data: checklist }, { catalogo }] = await Promise.all([
     supabase
@@ -63,7 +64,7 @@ export default async function ChecklistPage({ params }: { params: Promise<{ id: 
             <ChecklistTipoBadge tipo={checklist.tipo} />
             <ChecklistStatusBadge status={checklist.status} />
             {checklist.veiculos ? (
-              <Link href={`/veiculos/${checklist.veiculos.id}`} className={buttonVariants({ variant: 'outline' })}>
+              <Link href={isMotorista ? '/meu-veiculo' : `/veiculos/${checklist.veiculos.id}`} className={buttonVariants({ variant: 'outline' })}>
                 <Truck /> Ver veículo
               </Link>
             ) : null}

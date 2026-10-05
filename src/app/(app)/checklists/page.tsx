@@ -20,7 +20,8 @@ const STATUS = ['ok', 'atencao', 'critico'] as const;
 
 export default async function ChecklistsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
-  const session = await requireSession();
+  // motorista: a RLS só devolve os checklists feitos em seu nome
+  const session = await requireSession({ motorista: true });
   const { supabase, isAdmin } = session;
   const filialId = resolveFilialFilter(session, sp);
   const statusRaw = Array.isArray(sp.status) ? sp.status[0] : sp.status;

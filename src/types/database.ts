@@ -66,7 +66,7 @@ type ChecklistRow = {
   veiculo_id: string;
   motorista_id: string;
   filial_id: string;
-  supervisor_id: string;
+  supervisor_id: string | null;
   data_envio: string;
   observacoes_gerais: string | null;
   status: ChecklistStatus;

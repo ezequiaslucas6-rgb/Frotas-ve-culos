@@ -7,6 +7,7 @@ import { friendlyDbError } from '@/lib/db-errors';
 import { TIPOS_CHECKLIST, calcularStatusChecklist, caminhoFotoChecklist, fotosEsperadas, tipoLabel, type ItemChecklist } from '@/lib/checklist/etapas';
 import { sincronizarAlertas } from '@/lib/maintenance/sync';
 import { checklistSchema } from '@/lib/schemas';
+import { createAdminClient } from '@/lib/supabase/admin';
 import type { Json } from '@/types/database';
 
 export type SalvarChecklistResult =
@@ -26,7 +27,8 @@ export type SalvarChecklistResult =
  *  5. recalcula os alertas de manutenção do veículo (KM novo pode vencer a revisão)
  */
 export async function salvarChecklist(input: unknown): Promise<SalvarChecklistResult> {
-  const { supabase } = await requireSession();
+  // o motorista também envia: a RLS só aceita os veículos dele e o checklist em seu nome
+  const { supabase, isMotorista } = await requireSession({ motorista: true });
 
   const parsed = checklistSchema.safeParse(input);
   if (!parsed.success) {
@@ -125,11 +127,18 @@ export async function salvarChecklist(input: unknown): Promise<SalvarChecklistRe
     return { ok: false, message: friendlyDbError(error) };
   }
 
-  await sincronizarAlertas(supabase, { veiculoId: veiculo.id }).catch((e) => console.error('[alertas]', e));
+  // O motorista não grava manutenções: a reavaliação do alerta usa o cliente do servidor
+  // (o veículo já foi validado pela RLS acima), como no abastecimento.
+  try {
+    await sincronizarAlertas(isMotorista ? createAdminClient() : supabase, { veiculoId: veiculo.id });
+  } catch (e) {
+    console.error('[alertas]', e);
+  }
 
   revalidatePath('/dashboard');
   revalidatePath('/checklists');
   revalidatePath(`/veiculos/${veiculo.id}`);
+  revalidatePath('/meu-veiculo');
 
   return { ok: true, id: c.checklistId, status: calcularStatusChecklist(c.itens.map((i) => i.severidade)) };
 }

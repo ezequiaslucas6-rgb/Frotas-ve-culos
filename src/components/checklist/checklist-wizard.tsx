@@ -63,9 +63,14 @@ interface ChecklistWizardProps {
   modelos: ModelosChecklist;
   veiculoInicialId?: string;
   tipoInicial?: ChecklistTipo;
+  /**
+   * Motorista logado: o checklist é sempre em nome dele (id do próprio cadastro; null se o
+   * cadastro não está ativo). Ausente para admin/supervisor, que escolhem o motorista.
+   */
+  motoristaFixoId?: string | null;
 }
 
-export function ChecklistWizard({ userId, veiculos, motoristas, modelos, veiculoInicialId, tipoInicial }: ChecklistWizardProps) {
+export function ChecklistWizard({ userId, veiculos, motoristas, modelos, veiculoInicialId, tipoInicial, motoristaFixoId }: ChecklistWizardProps) {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
@@ -74,7 +79,8 @@ export function ChecklistWizard({ userId, veiculos, motoristas, modelos, veiculo
   const [checklistId, setChecklistId] = useState(uuid);
   const [tipo, setTipo] = useState<ChecklistTipo>(tipoInicial ?? 'diario');
   const [veiculoId, setVeiculoId] = useState(veiculos.some((v) => v.id === veiculoInicialId) ? (veiculoInicialId ?? '') : '');
-  const [motoristaId, setMotoristaId] = useState('');
+  const souMotorista = motoristaFixoId !== undefined;
+  const [motoristaId, setMotoristaId] = useState(motoristaFixoId ?? '');
   const [kmAtual, setKmAtual] = useState(() => String(veiculos.find((v) => v.id === veiculoInicialId)?.km_atual ?? ''));
   const [observacoesGerais, setObservacoesGerais] = useState('');
   // fotos por código do item: trocar o tipo mantém as fotos dos itens em comum
@@ -302,7 +308,7 @@ export function ChecklistWizard({ userId, veiculos, motoristas, modelos, veiculo
   function motivoBloqueio(): string | null {
     if (podeAvancar) return null;
     if (passoAtual === PASSO_IDENTIFICACAO) {
-      if (!veiculo || !motoristaId) return 'Selecione o veículo e o motorista.';
+      if (!veiculo || !motoristaId) return souMotorista ? 'Selecione o veículo.' : 'Selecione o veículo e o motorista.';
       if (itens.length === 0) return 'Este tipo de checklist não tem fotos configuradas.';
       return `Informe o KM do hodômetro (mínimo ${veiculo.km_atual}).`;
     }
@@ -358,6 +364,24 @@ export function ChecklistWizard({ userId, veiculos, motoristas, modelos, veiculo
   }
 
   /* ------------------------------ render ------------------------------ */
+
+  // motorista sem cadastro ativo ou sem veículo: quem resolve é o supervisor
+  if (souMotorista && (!motoristaFixoId || veiculos.length === 0)) {
+    return (
+      <div className="mx-auto flex max-w-md flex-col gap-4 py-10 text-center">
+        <AlertTriangle className="mx-auto size-10 text-warning" />
+        <h1 className="text-xl font-bold">{motoristaFixoId ? 'Nenhum veículo com você' : 'Cadastro inativo'}</h1>
+        <p className="text-sm text-muted-foreground">
+          {motoristaFixoId
+            ? 'Para fazer o checklist, peça ao seu supervisor para vincular o veículo a você.'
+            : 'Seu cadastro de motorista não está ativo. Fale com o seu supervisor.'}
+        </p>
+        <Link href="/meu-veiculo" className={buttonVariants({ size: 'lg' })}>
+          Voltar ao Meu veículo
+        </Link>
+      </div>
+    );
+  }
 
   if (veiculos.length === 0 || motoristas.length === 0) {
     return (
@@ -480,7 +504,9 @@ export function ChecklistWizard({ userId, veiculos, motoristas, modelos, veiculo
               <h2 id="ident-titulo" className="text-xl font-bold">
                 Identificação
               </h2>
-              <p className="mt-1 text-sm text-muted-foreground">Escolha o tipo de checklist, o veículo e o motorista.</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {souMotorista ? 'Escolha o tipo de checklist e confira o veículo.' : 'Escolha o tipo de checklist, o veículo e o motorista.'}
+              </p>
             </header>
 
             <fieldset className="flex flex-col gap-2">
@@ -526,7 +552,7 @@ export function ChecklistWizard({ userId, veiculos, motoristas, modelos, veiculo
                 onChange={(e) => {
                   const novo = veiculos.find((v) => v.id === e.target.value);
                   setVeiculoId(e.target.value);
-                  setMotoristaId('');
+                  setMotoristaId(motoristaFixoId ?? '');
                   setKmAtual(novo ? String(novo.km_atual) : '');
                 }}
                 className="h-12"
@@ -544,7 +570,7 @@ export function ChecklistWizard({ userId, veiculos, motoristas, modelos, veiculo
               </Select>
             </Field>
             <Field label="Motorista" htmlFor="motorista" required hint={veiculo && motoristasDaFilial.length === 0 ? 'Nenhum motorista ativo nesta filial.' : undefined}>
-              <Select id="motorista" value={motoristaId} onChange={(e) => setMotoristaId(e.target.value)} disabled={!veiculo} className="h-12">
+              <Select id="motorista" value={motoristaId} onChange={(e) => setMotoristaId(e.target.value)} disabled={!veiculo || souMotorista} className="h-12">
                 <option value="" disabled>
                   {veiculo ? 'Selecione o motorista…' : 'Selecione o veículo primeiro'}
                 </option>

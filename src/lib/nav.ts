@@ -3,7 +3,6 @@ import {
   Camera,
   CarFront,
   ClipboardCheck,
-  Fuel,
   LayoutDashboard,
   Receipt,
   Truck,
@@ -32,7 +31,7 @@ const GESTAO: Papel[] = ['admin', 'supervisor'];
 export const NAV_ITEMS: NavItem[] = [
   { href: '/meu-veiculo', label: 'Meu veículo', icon: CarFront, papeis: ['motorista'] },
   { href: '/dashboard', label: 'Painel', icon: LayoutDashboard, papeis: GESTAO },
-  { href: '/checklists', label: 'Checklists', icon: ClipboardCheck, papeis: GESTAO },
+  { href: '/checklists', label: 'Checklists', icon: ClipboardCheck, papeis: ['admin', 'supervisor', 'motorista'] },
   { href: '/veiculos', label: 'Veículos', icon: Truck, papeis: GESTAO },
   { href: '/motoristas', label: 'Motoristas', icon: Users, papeis: GESTAO },
   { href: '/abastecimentos', label: 'Abastecimentos', curto: 'Histórico', icon: Receipt, papeis: ['admin', 'supervisor', 'motorista'] },
@@ -42,11 +41,11 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/perfil', label: 'Meu perfil', icon: UserRound, papeis: ['motorista'] },
 ];
 
-/** Botão de destaque (câmera/bomba) e os itens fixos da barra inferior no celular. */
+/** Botão de destaque (câmera) e os itens fixos da barra inferior no celular. */
 export const ACAO_PRINCIPAL: Record<Papel, { href: string; label: string; icon: LucideIcon }> = {
   admin: { href: '/checklists/novo', label: 'Novo checklist', icon: Camera },
   supervisor: { href: '/checklists/novo', label: 'Novo checklist', icon: Camera },
-  motorista: { href: '/abastecimentos/novo', label: 'Registrar abastecimento', icon: Fuel },
+  motorista: { href: '/checklists/novo', label: 'Novo checklist', icon: Camera },
 };
 
 export const BARRA_INFERIOR: Record<Papel, string[]> = {

@@ -106,10 +106,13 @@ describe('motorista: enxerga só o que é dele', () => {
     });
   });
 
-  it('não registra checklist (RPC continua restrita a supervisor/admin)', async () => {
+  it('não registra checklist de veículo que não é dele nem em nome de outro motorista', async () => {
     await as(DRV_1, async () => {
       await expect(
-        db.query(`insert into public.checklists (veiculo_id, motorista_id, filial_id) values ($1, $2, $3)`, [V_1, M_1, F_SP]),
+        db.query(`insert into public.checklists (veiculo_id, motorista_id, filial_id) values ($1, $2, $3)`, [V_2, M_1, F_SP]),
+      ).rejects.toThrow(/row-level security/);
+      await expect(
+        db.query(`insert into public.checklists (veiculo_id, motorista_id, filial_id) values ($1, $2, $3)`, [V_1, M_2, F_SP]),
       ).rejects.toThrow(/row-level security/);
     });
   });
@@ -313,6 +316,123 @@ describe('Storage do motorista', () => {
   });
 });
 
+// Modelo padrão do checklist DIÁRIO (migration 20260105): 15 fotos + a pergunta de vazamento/avaria
+const DIARIO = [
+  'frente', 'traseira', 'lateral_esquerda', 'lateral_direita',
+  'pneu_dianteiro_esquerdo', 'pneu_dianteiro_direito', 'pneu_traseiro_esquerdo', 'pneu_traseiro_direito',
+  'retrovisor_esquerdo', 'retrovisor_direito', 'nivel_oleo', 'fluido_freio', 'nivel_agua', 'painel', 'bancos',
+];
+const CK_1 = '40000000-0000-4000-8000-0000000000d1'; // feito pelo motorista M_1
+const CK_SUP_M1 = '40000000-0000-4000-8000-0000000000d2'; // feito pelo supervisor, motorista M_1
+const CK_SUP_M3 = '40000000-0000-4000-8000-0000000000d3'; // feito pelo supervisor, motorista M_3
+const CK_RASCUNHO_1 = '40000000-0000-4000-8000-0000000000e1'; // ainda não enviado (fotos do M_1)
+const CK_RASCUNHO_2 = '40000000-0000-4000-8000-0000000000e2'; // ainda não enviado (fotos de outra pessoa)
+
+const salvarChecklist = (id: string, veiculo: string, motorista: string, km: number) =>
+  db.query(
+    `select public.salvar_checklist($1, 'diario'::public.checklist_tipo, $2, $3, null, $4, $5::jsonb, '{"vazamento_avaria": false}'::jsonb)`,
+    [
+      id, veiculo, motorista, km,
+      JSON.stringify(DIARIO.map((c) => ({ categoria_foto: c, foto_url: `${F_SP}/${id}/${c}.jpg`, severidade: 'ok', observacao: null, marcadores: [] }))),
+    ],
+  );
+
+describe('checklist feito pelo motorista', () => {
+  it('faz o checklist do próprio veículo, em seu nome; o KM do veículo é atualizado', async () => {
+    await as(DRV_1, async () => {
+      await salvarChecklist(CK_1, V_1, M_1, 1600);
+      expect(await ids('select id from public.checklists')).toEqual([CK_1]);
+      expect(await rows('select count(*)::int as n from public.checklist_fotos')).toEqual([{ n: 15 }]);
+    });
+    expect(await rows('select supervisor_id, motorista_id from public.checklists where id = $1', [CK_1])).toEqual([
+      { supervisor_id: DRV_1, motorista_id: M_1 },
+    ]);
+    expect(await rows('select km_atual from public.veiculos where id = $1', [V_1])).toEqual([{ km_atual: 1600 }]);
+  });
+
+  it('não faz checklist de veículo que não é dele, de outra filial nem em nome de outro motorista', async () => {
+    const outro = '40000000-0000-4000-8000-0000000000f1';
+    await as(DRV_1, async () => {
+      await expect(salvarChecklist(outro, V_2, M_1, 2100)).rejects.toThrow(/sem permissão/);
+      await expect(salvarChecklist(outro, V_RJ, M_1, 5100)).rejects.toThrow(/sem permissão/);
+      await expect(salvarChecklist(outro, V_1, M_2, 1700)).rejects.toThrow(/row-level security/);
+    });
+    await as(DRV_2, async () => {
+      await expect(salvarChecklist(outro, V_1, M_2, 1700)).rejects.toThrow(/sem permissão/);
+    });
+    expect(await rows('select 1 from public.checklists where id = $1', [outro])).toHaveLength(0);
+  });
+
+  it('cada motorista vê só os checklists feitos em seu nome; o supervisor vê os da filial', async () => {
+    await as(SUP_SP, async () => {
+      await salvarChecklist(CK_SUP_M1, V_1, M_1, 1650);
+      await salvarChecklist(CK_SUP_M3, V_2, M_3, 2100);
+    });
+    await as(DRV_1, async () => expect(await ids('select id from public.checklists')).toEqual([CK_1, CK_SUP_M1]));
+    await as(DRV_2, async () => expect(await ids('select id from public.checklists')).toEqual([]));
+    await as(SUP_SP, async () => expect(await ids('select id from public.checklists')).toEqual([CK_1, CK_SUP_M1, CK_SUP_M3]));
+    await as(SUP_RJ, async () => expect(await ids('select id from public.checklists')).toEqual([]));
+  });
+
+  it('o checklist enviado não muda para o motorista', async () => {
+    await as(DRV_1, async () => {
+      expect((await db.query(`update public.checklists set status = 'ok' where id = $1`, [CK_1])).affectedRows).toBe(0);
+      expect((await db.query(`delete from public.checklist_fotos where checklist_id = $1`, [CK_1])).affectedRows).toBe(0);
+    });
+  });
+});
+
+describe('Storage do checklist (motorista)', () => {
+  const enviar = (name: string, dono: string) =>
+    db.query(`insert into storage.objects (bucket_id, name, owner_id) values ('checklists', $1, $2)`, [name, dono]);
+  const nomes = async () =>
+    (await rows<{ name: string }>(`select name from storage.objects where bucket_id = 'checklists' order by name`)).map((r) => r.name);
+
+  beforeAll(async () => {
+    // fotos enviadas por outras pessoas (o Storage grava o uid de quem enviou em owner_id)
+    await db.exec(`
+      insert into storage.objects (bucket_id, name, owner_id) values
+        ('checklists', '${F_SP}/${CK_SUP_M1}/frente.jpg', '${SUP_SP}'),
+        ('checklists', '${F_SP}/${CK_SUP_M3}/frente.jpg', '${SUP_SP}'),
+        ('checklists', '${F_SP}/${CK_RASCUNHO_2}/frente.jpg', '${SUP_SP}'),
+        ('checklists', '${F_SP}/${CK_1}/frente.jpg', '${DRV_1}');
+    `);
+  });
+
+  it('envia fotos só na pasta da própria filial e só de checklist ainda não enviado', async () => {
+    await as(DRV_1, async () => {
+      await enviar(`${F_SP}/${CK_RASCUNHO_1}/frente.jpg`, DRV_1);
+      await expect(enviar(`${F_RJ}/${CK_RASCUNHO_1}/traseira.jpg`, DRV_1)).rejects.toThrow(/row-level security/);
+      await expect(enviar(`${F_SP}/${CK_1}/traseira.jpg`, DRV_1)).rejects.toThrow(/row-level security/);
+      await expect(enviar(`${F_SP}/${CK_RASCUNHO_1}/extra/traseira.jpg`, DRV_1)).rejects.toThrow(/row-level security/);
+    });
+    // motorista sem veículo não envia foto de checklist
+    await as(DRV_2, async () => {
+      await expect(enviar(`${F_SP}/${CK_RASCUNHO_2}/traseira.jpg`, DRV_2)).rejects.toThrow(/row-level security/);
+    });
+  });
+
+  it('vê as próprias fotos e as dos checklists feitos em seu nome; não as de outros', async () => {
+    await as(DRV_1, async () => {
+      expect(await nomes()).toEqual([
+        `${F_SP}/${CK_1}/frente.jpg`,
+        `${F_SP}/${CK_SUP_M1}/frente.jpg`,
+        `${F_SP}/${CK_RASCUNHO_1}/frente.jpg`,
+      ].sort());
+    });
+    await as(DRV_2, async () => expect(await nomes()).toEqual([]));
+  });
+
+  it('refaz a foto (upsert) só no próprio arquivo e só antes do envio', async () => {
+    const refazer = (name: string) => db.query(`update storage.objects set name = name where bucket_id = 'checklists' and name = $1`, [name]);
+    await as(DRV_1, async () => {
+      expect((await refazer(`${F_SP}/${CK_RASCUNHO_1}/frente.jpg`)).affectedRows).toBe(1);
+      expect((await refazer(`${F_SP}/${CK_1}/frente.jpg`)).affectedRows).toBe(0); // já enviado
+      expect((await refazer(`${F_SP}/${CK_RASCUNHO_2}/frente.jpg`)).affectedRows).toBe(0); // de outra pessoa
+    });
+  });
+});
+
 describe('remover o acesso do motorista', () => {
   it('apagar o login desvincula o cadastro e preserva os abastecimentos', async () => {
     await db.query(`delete from auth.users where id = $1`, [DRV_1]);
@@ -323,5 +443,14 @@ describe('remover o acesso do motorista', () => {
     );
     expect(lancamentos).toHaveLength(2);
     expect(lancamentos.every((l) => l.registrado_por === null)).toBe(true);
+    // o checklist que ele fez continua no histórico, ligado ao cadastro
+    expect(await rows('select supervisor_id, motorista_id from public.checklists where id = $1', [CK_1])).toEqual([
+      { supervisor_id: null, motorista_id: M_1 },
+    ]);
+  });
+
+  it('supervisor com checklists registrados continua sem poder ser excluído', async () => {
+    await expect(db.query(`delete from auth.users where id = $1`, [SUP_SP])).rejects.toThrow(/checklists registrados/);
+    expect(await rows('select 1 from public.profiles where id = $1', [SUP_SP])).toHaveLength(1);
   });
 });
