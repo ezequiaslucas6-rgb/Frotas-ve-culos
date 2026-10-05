@@ -1,6 +1,15 @@
-import { Fuel, Receipt } from 'lucide-react';
+import { Fuel, Receipt, TriangleAlert } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { combustivelLabel, formatKmL, formatLitros, formatPrecoLitro, type Combustivel } from '@/lib/abastecimento/consumo';
+import {
+  combustivelLabel,
+  descreverAnomalia,
+  dicaAnomalia,
+  formatKmL,
+  formatLitros,
+  formatPrecoLitro,
+  type AnomaliaConsumo,
+  type Combustivel,
+} from '@/lib/abastecimento/consumo';
 import { formatBRL, formatDateISO, formatKm } from '@/lib/format';
 import { formatPlaca } from '@/lib/validators/documentos';
 
@@ -21,11 +30,13 @@ export interface ItemAbastecimento {
 
 /**
  * Lista de abastecimentos (celular e desktop). `consumo` traz o km/l dos lançamentos
- * que fecham um ciclo de tanque cheio; `urls` as URLs assinadas dos comprovantes.
+ * que fecham um ciclo de tanque cheio; `urls` as URLs assinadas dos comprovantes;
+ * `anomalias` (só para a gestão) marca o consumo fora do padrão.
  */
 export function ListaAbastecimentos({
   itens,
   consumo = {},
+  anomalias = {},
   urls = {},
   mostrarVeiculo = false,
   mostrarMotorista = false,
@@ -33,6 +44,7 @@ export function ListaAbastecimentos({
 }: {
   itens: ItemAbastecimento[];
   consumo?: Record<string, number>;
+  anomalias?: Record<string, AnomaliaConsumo>;
   urls?: Record<string, string>;
   mostrarVeiculo?: boolean;
   mostrarMotorista?: boolean;
@@ -43,6 +55,7 @@ export function ListaAbastecimentos({
       {itens.map((a) => {
         const comprovante = a.comprovante_url ? urls[a.comprovante_url] : undefined;
         const kml = consumo[a.id];
+        const anomalia = anomalias[a.id];
         return (
           <li key={a.id} className="flex items-start gap-3 py-3.5">
             <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl bg-icone/15 text-icone">
@@ -68,6 +81,11 @@ export function ListaAbastecimentos({
                 {a.posto ? <span>· {a.posto}</span> : null}
                 {mostrarMotorista ? <span>· {a.motoristas?.nome ?? 'Sem motorista'}</span> : null}
                 {a.tanque_cheio ? null : <Badge variant="secondary">Parcial</Badge>}
+                {anomalia ? (
+                  <Badge variant={anomalia.tipo === 'queda' ? 'danger' : 'warning'} title={dicaAnomalia(anomalia)}>
+                    <TriangleAlert /> Consumo {descreverAnomalia(anomalia)}
+                  </Badge>
+                ) : null}
                 {comprovante ? (
                   <a
                     href={comprovante}

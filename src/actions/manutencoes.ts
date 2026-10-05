@@ -7,7 +7,7 @@ import { requireAdmin, requireSession } from '@/lib/auth';
 import { friendlyDbError } from '@/lib/db-errors';
 import { proximaRevisao } from '@/lib/maintenance/alerts';
 import { sincronizarAlertas } from '@/lib/maintenance/sync';
-import { flattenErrors, formDataToObject, manutencaoSchema } from '@/lib/schemas';
+import { concluirManutencaoSchema, flattenErrors, formDataToObject, manutencaoSchema } from '@/lib/schemas';
 
 /**
  * Registra uma manutenção e recalcula os alertas.
@@ -109,4 +109,51 @@ export async function excluirManutencao(_prev: ActionState, formData: FormData):
   revalidatePath('/manutencoes');
   revalidatePath('/dashboard');
   return ok('Manutenção excluída.');
+}
+
+/**
+ * Conclui uma manutenção aberta (ex.: o conserto da avaria apontada no checklist).
+ * O banco marca quem concluiu e LIBERA o veículo bloqueado por ela (gatilho da migration
+ * 20260107). O KM do veículo só avança.
+ */
+export async function concluirManutencao(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const { supabase } = await requireSession();
+  const parsed = concluirManutencaoSchema.safeParse(formDataToObject(formData));
+  if (!parsed.success) return fail('Corrija os campos destacados.', flattenErrors(parsed.error));
+  const c = parsed.data;
+
+  const { data: atual } = await supabase.from('manutencoes').select('id, veiculo_id, situacao').eq('id', c.id).maybeSingle();
+  if (!atual) return fail('Manutenção não encontrada.');
+  if (atual.situacao !== 'aberta') return fail('Esta manutenção já foi concluída.');
+
+  const { error, count } = await supabase
+    .from('manutencoes')
+    .update(
+      {
+        situacao: 'concluida',
+        descricao: c.descricao,
+        custo: c.custo,
+        km_registro: c.km_registro,
+        data_manutencao: c.data_manutencao,
+        fornecedor: c.fornecedor ?? null,
+      },
+      { count: 'exact' },
+    )
+    .eq('id', c.id)
+    .eq('situacao', 'aberta');
+  if (error) return fail(friendlyDbError(error));
+  if (!count) return fail('Esta manutenção já foi concluída.');
+
+  const { data: veiculo } = await supabase.from('veiculos').select('id, km_atual').eq('id', atual.veiculo_id).maybeSingle();
+  if (veiculo && c.km_registro > veiculo.km_atual) {
+    await supabase.from('veiculos').update({ km_atual: c.km_registro }).eq('id', veiculo.id);
+  }
+  await sincronizarAlertas(supabase, { veiculoId: atual.veiculo_id }).catch((e) => console.error('[alertas]', e));
+
+  revalidatePath('/manutencoes');
+  revalidatePath('/dashboard');
+  revalidatePath('/veiculos');
+  revalidatePath(`/veiculos/${atual.veiculo_id}`);
+  revalidatePath('/meu-veiculo');
+  redirect(`/veiculos/${atual.veiculo_id}`);
 }

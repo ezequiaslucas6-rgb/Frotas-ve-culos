@@ -66,7 +66,7 @@ describe('avaliarSaudeVeiculo', () => {
   const base = { ultimoChecklistStatus: null, ultimoChecklistEm: null, ultimaCorretivaEm: null, alerta: 'ok' as const };
 
   it('liberado sem pendências', () => {
-    expect(avaliarSaudeVeiculo(base)).toEqual({ saude: 'liberado', motivos: [] });
+    expect(avaliarSaudeVeiculo(base)).toEqual({ saude: 'liberado', motivos: [], naoLiberado: false });
     expect(avaliarSaudeVeiculo({ ...base, ultimoChecklistStatus: 'ok', ultimoChecklistEm: '2026-03-01T12:00:00Z' }).saude).toBe('liberado');
   });
 
@@ -93,5 +93,27 @@ describe('avaliarSaudeVeiculo', () => {
     const r = avaliarSaudeVeiculo({ ...base, alerta: 'proximo', ultimoChecklistStatus: 'critico', ultimoChecklistEm: '2026-03-01T12:00:00Z' });
     expect(r.saude).toBe('manutencao');
     expect(r.motivos).toHaveLength(2);
+  });
+
+  describe('avaria crítica com bloqueio (não liberado)', () => {
+    const critico = { ...base, ultimoChecklistStatus: 'critico' as const, ultimoChecklistEm: '2026-03-05T15:00:00Z' };
+
+    it('bloqueio aberto => não liberado (vermelho), com um único motivo', () => {
+      const r = avaliarSaudeVeiculo({ ...critico, bloqueado: true, manutencoesAbertas: 1 });
+      expect(r).toEqual({ saude: 'manutencao', motivos: ['Não liberado: avaria crítica no checklist'], naoLiberado: true });
+    });
+
+    it('liberado pelo responsável depois do checklist, conserto pendente => atenção', () => {
+      const r = avaliarSaudeVeiculo({ ...critico, ultimaLiberacaoEm: '2026-03-05T18:00:00Z', manutencoesAbertas: 1 });
+      expect(r).toEqual({ saude: 'atencao', motivos: ['Conserto pendente'], naoLiberado: false });
+    });
+
+    it('liberação ANTES do checklist crítico não vale para ele', () => {
+      expect(avaliarSaudeVeiculo({ ...critico, ultimaLiberacaoEm: '2026-03-01T10:00:00Z' }).saude).toBe('manutencao');
+    });
+
+    it('conserto concluído e nada pendente => liberado', () => {
+      expect(avaliarSaudeVeiculo({ ...critico, ultimaCorretivaEm: '2026-03-06', ultimaLiberacaoEm: '2026-03-06T10:00:00Z', manutencoesAbertas: 0 }).saude).toBe('liberado');
+    });
   });
 });

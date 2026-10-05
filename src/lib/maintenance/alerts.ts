@@ -8,12 +8,14 @@
  *   ok       -> dentro do plano (ou veículo sem plano de revisão cadastrado)
  *
  * Saúde do veículo (badge do painel):
- *   manutencao (vermelho) -> último checklist crítico (avaria) ainda não tratado,
- *                            ou revisão vencida
- *   atencao    (amarelo)  -> último checklist com atenção ainda não tratado,
- *                            ou revisão próxima
+ *   manutencao (vermelho) -> NÃO LIBERADO (avaria crítica no checklist, até o conserto ou a
+ *                            liberação pelo responsável), último checklist crítico ainda não
+ *                            tratado, ou revisão vencida
+ *   atencao    (amarelo)  -> conserto pendente (liberado pelo responsável), último checklist
+ *                            com atenção ainda não tratado, ou revisão próxima
  *   liberado   (verde)    -> nenhum dos anteriores
- * "Tratado" = existe manutenção CORRETIVA registrada na data do checklist ou depois.
+ * "Tratado" = manutenção CORRETIVA concluída na data do checklist ou depois (ou, para a
+ * avaria, a liberação do veículo depois do checklist).
  */
 import { addDays, diffDays, toISODate } from '@/lib/dates';
 import type { Enums } from '@/types/database';
@@ -83,15 +85,23 @@ export interface EntradaSaude {
   ultimoChecklistStatus: ChecklistStatus | null;
   /** timestamptz do envio do último checklist */
   ultimoChecklistEm: string | null;
-  /** data (YYYY-MM-DD) da última manutenção corretiva */
+  /** data (YYYY-MM-DD) da última manutenção corretiva concluída */
   ultimaCorretivaEm: string | null;
   alerta: NivelAlerta;
+  /** há bloqueio aberto (avaria crítica ainda não consertada nem liberada) */
+  bloqueado?: boolean;
+  /** timestamptz da última liberação do veículo (conserto ou responsável) */
+  ultimaLiberacaoEm?: string | null;
+  /** manutenções em aberto (conserto pendente) */
+  manutencoesAbertas?: number;
 }
 
 export interface SaudeAvaliada {
   saude: SaudeVeiculo;
   /** Motivos legíveis para exibir ao usuário. */
   motivos: string[];
+  /** veículo bloqueado por avaria crítica: não deve rodar */
+  naoLiberado: boolean;
 }
 
 export function avaliarSaudeVeiculo(entrada: EntradaSaude): SaudeAvaliada {
@@ -102,8 +112,15 @@ export function avaliarSaudeVeiculo(entrada: EntradaSaude): SaudeAvaliada {
   };
 
   const { ultimoChecklistStatus: status, ultimoChecklistEm, ultimaCorretivaEm } = entrada;
-  if (status && status !== 'ok' && ultimoChecklistEm) {
-    const tratado = ultimaCorretivaEm != null && ultimaCorretivaEm >= toISODate(ultimoChecklistEm);
+  const naoLiberado = Boolean(entrada.bloqueado);
+  if (naoLiberado) {
+    piorar('manutencao');
+    motivos.push('Não liberado: avaria crítica no checklist');
+  } else if (status && status !== 'ok' && ultimoChecklistEm) {
+    const consertado = ultimaCorretivaEm != null && ultimaCorretivaEm >= toISODate(ultimoChecklistEm);
+    // a liberação do veículo depois do checklist também resolve a avaria (o conserto pode ficar pendente)
+    const liberado = status === 'critico' && entrada.ultimaLiberacaoEm != null && entrada.ultimaLiberacaoEm >= ultimoChecklistEm;
+    const tratado = consertado || liberado;
     if (!tratado) {
       if (status === 'critico') {
         piorar('manutencao');
@@ -115,6 +132,11 @@ export function avaliarSaudeVeiculo(entrada: EntradaSaude): SaudeAvaliada {
     }
   }
 
+  if (!naoLiberado && (entrada.manutencoesAbertas ?? 0) > 0) {
+    piorar('atencao');
+    motivos.push('Conserto pendente');
+  }
+
   if (entrada.alerta === 'vencido') {
     piorar('manutencao');
     motivos.push('Revisão preventiva vencida');
@@ -123,7 +145,7 @@ export function avaliarSaudeVeiculo(entrada: EntradaSaude): SaudeAvaliada {
     motivos.push('Revisão preventiva próxima');
   }
 
-  return { saude, motivos };
+  return { saude, motivos, naoLiberado };
 }
 
 /** Atalho: dado um veículo da view do painel, devolve alerta + saúde. */
@@ -135,6 +157,9 @@ export function avaliarVeiculoPainel(
     ultimo_checklist_status: ChecklistStatus | null;
     ultimo_checklist_em: string | null;
     ultima_corretiva_em: string | null;
+    bloqueio_id?: string | null;
+    ultima_liberacao_em?: string | null;
+    manutencoes_abertas?: number | null;
   },
   hoje: string = toISODate(),
 ): { alerta: AlertaRevisao } & SaudeAvaliada {
@@ -147,6 +172,9 @@ export function avaliarVeiculoPainel(
     ultimoChecklistEm: v.ultimo_checklist_em,
     ultimaCorretivaEm: v.ultima_corretiva_em,
     alerta: alerta.nivel,
+    bloqueado: Boolean(v.bloqueio_id),
+    ultimaLiberacaoEm: v.ultima_liberacao_em ?? null,
+    manutencoesAbertas: v.manutencoes_abertas ?? 0,
   });
   return { alerta, ...saude };
 }

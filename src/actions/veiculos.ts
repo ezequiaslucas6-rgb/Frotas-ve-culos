@@ -7,7 +7,7 @@ import { requireAdmin, requireSession, resolveFilialId } from '@/lib/auth';
 import { addDays, toISODate } from '@/lib/dates';
 import { friendlyDbError } from '@/lib/db-errors';
 import { sincronizarAlertas } from '@/lib/maintenance/sync';
-import { flattenErrors, formDataToObject, veiculoSchema } from '@/lib/schemas';
+import { flattenErrors, formDataToObject, liberarVeiculoSchema, veiculoSchema } from '@/lib/schemas';
 
 /** Arquivos do veículo vivem em <filial_id>/... no bucket "veiculos". */
 const MOTORISTA_INVALIDO = 'O motorista responsável precisa ser da mesma filial do veículo.';
@@ -97,4 +97,23 @@ export async function excluirVeiculo(_prev: ActionState, formData: FormData): Pr
   if (!count) return fail('Veículo não encontrado.');
   revalidatePath('/veiculos');
   return ok('Veículo excluído.');
+}
+
+/**
+ * Liberação do veículo bloqueado por avaria crítica, pelo responsável (supervisor da filial
+ * ou admin), com o motivo. O conserto continua pendente na manutenção aberta.
+ */
+export async function liberarVeiculo(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const { supabase } = await requireSession();
+  const parsed = liberarVeiculoSchema.safeParse(formDataToObject(formData));
+  if (!parsed.success) return fail('Informe o motivo da liberação.', flattenErrors(parsed.error));
+
+  const { error } = await supabase.rpc('liberar_veiculo', { p_veiculo_id: parsed.data.veiculo_id, p_motivo: parsed.data.motivo });
+  if (error) return fail(friendlyDbError(error));
+
+  revalidatePath('/dashboard');
+  revalidatePath('/veiculos');
+  revalidatePath(`/veiculos/${parsed.data.veiculo_id}`);
+  revalidatePath('/meu-veiculo');
+  return ok('Veículo liberado. O conserto continua pendente em Manutenções.');
 }

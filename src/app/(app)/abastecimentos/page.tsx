@@ -10,7 +10,7 @@ import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { DeleteButton } from '@/components/ui/delete-button';
 import { EmptyState, PageHeader } from '@/components/ui/page-header';
-import { calcularConsumo, formatKmL, formatLitros, formatPrecoLitro } from '@/lib/abastecimento/consumo';
+import { calcularConsumo, detectarConsumoAnormal, formatKmL, formatLitros, formatPrecoLitro } from '@/lib/abastecimento/consumo';
 import { requireSession } from '@/lib/auth';
 import { addDays, toISODate } from '@/lib/dates';
 import { formatBRL } from '@/lib/format';
@@ -53,7 +53,8 @@ export default async function AbastecimentosPage({ searchParams }: { searchParam
   const motoristaId = !isMotorista && uuidOk(sp.motorista) ? sp.motorista : null;
   const page = parsePage(sp.page);
 
-  // O mês inteiro (para os totais) + 60 dias antes, só para fechar o km/l do 1º tanque cheio do mês.
+  // O mês inteiro (para os totais) + 120 dias antes, só para fechar o km/l do 1º tanque cheio do mês
+  // e ter a referência do consumo normal de cada veículo.
   // A lista é paginada em memória. A RLS limita o motorista aos próprios lançamentos.
   const inicio = `${mes}-01`;
   let query = supabase
@@ -61,7 +62,7 @@ export default async function AbastecimentosPage({ searchParams }: { searchParam
     .select(
       'id, veiculo_id, data_abastecimento, km, litros, valor_total, preco_litro, combustivel, tanque_cheio, posto, comprovante_url, veiculos(placa), motoristas(nome)',
     )
-    .gte('data_abastecimento', addDays(inicio, -60))
+    .gte('data_abastecimento', addDays(inicio, -120))
     .lt('data_abastecimento', `${proximoMes(mes)}-01`)
     .order('data_abastecimento', { ascending: false })
     .order('km', { ascending: false })
@@ -81,8 +82,13 @@ export default async function AbastecimentosPage({ searchParams }: { searchParam
   const comContexto = data ?? [];
   const itens = comContexto.filter((a) => a.data_abastecimento >= inicio);
 
-  const consumos = [...Map.groupBy(comContexto, (a) => a.veiculo_id).values()].map((lista) => calcularConsumo(lista));
+  const porVeiculo = [...Map.groupBy(comContexto, (a) => a.veiculo_id).values()];
+  const consumos = porVeiculo.map((lista) => calcularConsumo(lista));
   const doMes = new Set(itens.map((a) => a.id));
+  // consumo fora do padrão: sinal para a gestão (vazamento, desvio, hodômetro)
+  const anomalias = isMotorista
+    ? {}
+    : Object.fromEntries(porVeiculo.flatMap((lista) => Object.entries(detectarConsumoAnormal(lista).porLancamento)).filter(([id]) => doMes.has(id)));
   const consumo: Record<string, number> = Object.fromEntries(
     consumos.flatMap((c) => Object.entries(c.porLancamento)).filter(([id]) => doMes.has(id)),
   );
@@ -157,6 +163,7 @@ export default async function AbastecimentosPage({ searchParams }: { searchParam
             <ListaAbastecimentos
               itens={pagina}
               consumo={consumo}
+              anomalias={anomalias}
               urls={urls}
               mostrarVeiculo
               mostrarMotorista={!isMotorista}

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from 'react';
-import { AlertTriangle, ArrowLeft, ArrowRight, Check, CircleCheck, CircleX, Loader2, Send, Trash2, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowRight, Check, CircleCheck, CircleX, CloudOff, Loader2, Send, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { salvarChecklist } from '@/actions/checklists';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -27,6 +27,7 @@ import {
   type ModelosChecklist,
 } from '@/lib/checklist/etapas';
 import { compressImage, formatBytes } from '@/lib/image/compress';
+import { ehFalhaDeRede, guardarEnvio, guardarFoto, lerFoto, marcarFotoEnviada, processarEnvio } from '@/lib/offline/fila';
 import { createClient } from '@/lib/supabase/client';
 import { uuid } from '@/lib/uuid';
 import { cn } from '@/lib/utils';
@@ -48,6 +49,9 @@ const ETAPA_VAZIA: EtapaState = {
 };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** A foto existe: no servidor ou guardada no aparelho (sem internet). */
+const temFoto = (e: EtapaState) => e.fase === 'enviada' || e.fase === 'pendente';
 
 const SEVERIDADE_BAR: Record<EtapaState['severidade'], string> = {
   ok: 'bg-success',
@@ -89,6 +93,8 @@ export function ChecklistWizard({ userId, veiculos, motoristas, modelos, veiculo
   const [decisaoRascunho, setDecisaoRascunho] = useState<'pendente' | 'resolvida'>('pendente');
   const [restaurando, setRestaurando] = useState(false);
   const [concluido, setConcluido] = useState(false);
+  /** placa do checklist guardado no aparelho (sem internet), aguardando o envio automático */
+  const [guardadoNoAparelho, setGuardadoNoAparelho] = useState<string | null>(null);
   const [erroEnvio, setErroEnvio] = useState<string | null>(null);
   const [enviando, startEnviar] = useTransition();
 
@@ -147,8 +153,14 @@ export function ChecklistWizard({ userId, veiculos, motoristas, modelos, veiculo
     const timer = setTimeout(() => {
       const salvas: ChecklistDraft['etapas'] = {};
       for (const [codigo, s] of Object.entries(etapas)) {
-        if (s?.fase === 'enviada' && s.fotoPath) {
-          salvas[codigo] = { fotoPath: s.fotoPath, severidade: s.severidade, observacao: s.observacao, marcadores: s.marcadores };
+        if ((s?.fase === 'enviada' || s?.fase === 'pendente') && s.fotoPath) {
+          salvas[codigo] = {
+            fotoPath: s.fotoPath,
+            local: s.fase === 'pendente',
+            severidade: s.severidade,
+            observacao: s.observacao,
+            marcadores: s.marcadores,
+          };
         }
       }
       saveDraft(userId, {
@@ -172,14 +184,23 @@ export function ChecklistWizard({ userId, veiculos, motoristas, modelos, veiculo
   async function restaurarRascunho(d: ChecklistDraft) {
     setRestaurando(true);
     const salvas = Object.entries(d.etapas).filter((e): e is [string, NonNullable<(typeof e)[1]>] => Boolean(e[1]));
-    const { data } = await supabase.storage.from('checklists').createSignedUrls(salvas.map(([, e]) => e.fotoPath), 3600);
+    const noServidor = salvas.filter(([, e]) => !e.local).map(([, e]) => e.fotoPath);
+    const { data } = noServidor.length
+      ? await supabase.storage.from('checklists').createSignedUrls(noServidor, 3600).catch(() => ({ data: null }))
+      : { data: null };
     const urls = new Map((data ?? []).filter((i) => i.signedUrl && i.path).map((i) => [i.path as string, i.signedUrl]));
 
-    // foto que não está mais no Storage fica de fora (precisa ser refeita)
+    // a foto vem do servidor ou do próprio aparelho (sem internet); se não houver nenhuma, precisa ser refeita
     const restauradas: EtapasState = {};
     for (const [codigo, salva] of salvas) {
       const url = urls.get(salva.fotoPath);
-      if (url) restauradas[codigo] = { ...ETAPA_VAZIA, ...salva, fase: 'enviada', previewUrl: url };
+      const local = url ? undefined : await lerFoto(salva.fotoPath);
+      if (url) {
+        restauradas[codigo] = { ...ETAPA_VAZIA, ...salva, fase: 'enviada', previewUrl: url };
+      } else if (local) {
+        blobs.current[codigo] = local.blob;
+        restauradas[codigo] = { ...ETAPA_VAZIA, ...salva, fase: local.enviada ? 'enviada' : 'pendente', previewUrl: URL.createObjectURL(local.blob) };
+      }
     }
     setChecklistId(d.checklistId);
     setTipo(modelos[d.tipo] ? d.tipo : 'diario');
@@ -207,22 +228,37 @@ export function ChecklistWizard({ userId, veiculos, motoristas, modelos, veiculo
   }, []);
 
   async function enviarFoto(codigo: string) {
-    const blob = blobs.current[codigo];
-    if (!blob || !veiculo) return;
+    if (!veiculo) return;
     const path = caminhoFotoChecklist(veiculo.filial_id, checklistId, codigo);
+    const blob = blobs.current[codigo] ?? (await lerFoto(path))?.blob;
+    if (!blob) return;
+    // sem internet: a foto já está guardada no aparelho e sobe sozinha depois
+    if (!navigator.onLine) {
+      patchEtapa(codigo, { fase: 'pendente', fotoPath: path, erro: undefined });
+      return;
+    }
     patchEtapa(codigo, { fase: 'enviando', erro: undefined });
 
+    let ultimoErro: unknown = null;
     for (let tentativa = 1; tentativa <= UPLOAD_TENTATIVAS; tentativa++) {
       const { error } = await supabase.storage
         .from('checklists')
         .upload(path, blob, { upsert: true, contentType: 'image/jpeg', cacheControl: '3600' });
       if (!error) {
+        await marcarFotoEnviada(path);
         patchEtapa(codigo, { fase: 'enviada', fotoPath: path, erro: undefined });
         return;
       }
+      ultimoErro = error;
+      if (!navigator.onLine) break;
       if (tentativa < UPLOAD_TENTATIVAS) await sleep(tentativa * 1000);
     }
-    patchEtapa(codigo, { fase: 'erro', erro: 'Não foi possível enviar a foto. Verifique a conexão e tente novamente.' });
+    if (ehFalhaDeRede(ultimoErro) && (await lerFoto(path))) {
+      // internet caiu ou servidor fora: segue o checklist; a foto sobe quando a conexão voltar
+      patchEtapa(codigo, { fase: 'pendente', fotoPath: path, erro: undefined });
+    } else {
+      patchEtapa(codigo, { fase: 'erro', erro: 'Não foi possível enviar a foto. Verifique a conexão e tente novamente.' });
+    }
   }
 
   async function processarFoto(codigo: string, file: File) {
@@ -236,6 +272,8 @@ export function ChecklistWizard({ userId, veiculos, motoristas, modelos, veiculo
     try {
       const comprimida = await compressImage(file, { maxDimension: 1600, quality: 0.8 });
       blobs.current[codigo] = comprimida.blob;
+      // guardada no aparelho primeiro: se a internet cair (ou o app fechar), a foto não se perde
+      await guardarFoto({ path: caminhoFotoChecklist(veiculo.filial_id, checklistId, codigo), checklistId, userId, blob: comprimida.blob });
       const anterior = etapasRef.current[codigo]?.previewUrl;
       if (anterior?.startsWith('blob:')) URL.revokeObjectURL(anterior);
       patchEtapa(codigo, {
@@ -285,9 +323,9 @@ export function ChecklistWizard({ userId, veiculos, motoristas, modelos, veiculo
     if (item.condicional) {
       const resposta = respostas[item.codigo];
       if (resposta === undefined) return false;
-      return !resposta || (e.fase === 'enviada' && e.severidade !== 'ok' && e.observacao.trim().length > 0);
+      return !resposta || (temFoto(e) && e.severidade !== 'ok' && e.observacao.trim().length > 0);
     }
-    const base = e.fase === 'enviada' && (e.severidade === 'ok' || e.observacao.trim().length > 0);
+    const base = temFoto(e) && (e.severidade === 'ok' || e.observacao.trim().length > 0);
     return item.codigo === ITEM_PAINEL ? base && kmValido : base;
   };
 
@@ -299,7 +337,8 @@ export function ChecklistWizard({ userId, veiculos, motoristas, modelos, veiculo
   const podeAvancar = passoAtual === PASSO_IDENTIFICACAO ? identificacaoValida : itemAtual ? itemValido(itemAtual) : false;
 
   const esperados = fotosEsperadas(itens, respostas);
-  const enviadas = esperados.filter((c) => etapa(c).fase === 'enviada');
+  const enviadas = esperados.filter((c) => temFoto(etapa(c)));
+  const noAparelho = esperados.filter((c) => etapa(c).fase === 'pendente').length;
   const severidades = enviadas.map((c) => etapa(c).severidade);
   const statusGeral = calcularStatusChecklist(severidades);
   const contagem = contarSeveridades(severidades);
@@ -319,7 +358,7 @@ export function ChecklistWizard({ userId, veiculos, motoristas, modelos, veiculo
       if (resposta === undefined) return 'Responda Sim ou Não para continuar.';
     }
     if (e.fase === 'processando' || e.fase === 'enviando') return 'Aguarde o envio da foto…';
-    if (e.fase !== 'enviada') return itemAtual.condicional ? 'Tire a foto do vazamento ou da avaria.' : 'Tire a foto deste item para continuar.';
+    if (!temFoto(e)) return itemAtual.condicional ? 'Tire a foto do vazamento ou da avaria.' : 'Tire a foto deste item para continuar.';
     if (itemAtual.condicional && e.severidade === 'ok') return 'Classifique como Atenção ou Avaria.';
     if (e.severidade !== 'ok' && !e.observacao.trim()) return 'Descreva a inconformidade para continuar.';
     if (itemAtual.codigo === ITEM_PAINEL && !kmValido) return `Informe o KM do hodômetro (mínimo ${veiculo?.km_atual ?? 0}).`;
@@ -331,39 +370,94 @@ export function ChecklistWizard({ userId, veiculos, motoristas, modelos, veiculo
   function enviar() {
     if (!veiculo || !todasValidas) return;
     setErroEnvio(null);
+    const payload = {
+      checklistId,
+      tipo,
+      veiculoId: veiculo.id,
+      motoristaId,
+      kmAtual: kmNumero,
+      observacoesGerais: observacoesGerais.trim() || undefined,
+      respostas: Object.fromEntries(itens.filter((i) => i.condicional).map((i) => [i.codigo, respostas[i.codigo] === true])),
+      itens: esperados.map((codigo) => {
+        const s = etapa(codigo);
+        return {
+          categoria: codigo,
+          fotoPath: s.fotoPath ?? '',
+          severidade: s.severidade,
+          observacao: s.observacao.trim() || undefined,
+          marcadores: s.marcadores,
+        };
+      }),
+    };
     startEnviar(async () => {
-      const resultado = await salvarChecklist({
-        checklistId,
-        tipo,
-        veiculoId: veiculo.id,
-        motoristaId,
-        kmAtual: kmNumero,
-        observacoesGerais: observacoesGerais.trim() || undefined,
-        respostas: Object.fromEntries(itens.filter((i) => i.condicional).map((i) => [i.codigo, respostas[i.codigo] === true])),
-        itens: esperados.map((codigo) => {
-          const s = etapa(codigo);
-          return {
-            categoria: codigo,
-            fotoPath: s.fotoPath ?? '',
-            severidade: s.severidade,
-            observacao: s.observacao.trim() || undefined,
-            marcadores: s.marcadores,
-          };
-        }),
-      });
-      if (resultado.ok) {
+      // 1º guarda no aparelho: se a internet cair no meio, nada se perde e o envio é automático depois
+      const envio = { checklistId, userId, placa: veiculo.placa, payload };
+      const naFila = await guardarEnvio(envio);
+      const resultado = naFila
+        ? await processarEnvio({ ...envio, criadoEm: Date.now() }, supabase, salvarChecklist)
+        : await salvarChecklist(payload)
+            .then((r): Awaited<ReturnType<typeof processarEnvio>> =>
+              r.ok ? { estado: 'enviado', id: r.id, status: r.status } : { estado: 'recusado', mensagem: r.message },
+            )
+            .catch((): Awaited<ReturnType<typeof processarEnvio>> => ({ estado: 'recusado', mensagem: 'Sem conexão. Tente de novo quando a internet voltar.' }));
+
+      if (resultado.estado === 'enviado') {
         setConcluido(true); // impede que o debounce recrie o rascunho depois de limpá-lo
         clearDraft(userId);
-        toast.success('Checklist enviado com sucesso!');
+        if (resultado.status === 'critico') {
+          // a avaria crítica abre a manutenção e deixa o veículo não liberado (migration 20260107)
+          toast.warning('Avaria crítica registrada: o veículo fica NÃO LIBERADO até o conserto ou a liberação do supervisor.', {
+            duration: 10000,
+          });
+        } else {
+          toast.success('Checklist enviado com sucesso!');
+        }
         router.replace(`/checklists/${resultado.id}`);
+      } else if (resultado.estado === 'aguardando') {
+        // sem internet: fica na fila do aparelho e é enviado sozinho quando a conexão voltar
+        setConcluido(true);
+        clearDraft(userId);
+        setGuardadoNoAparelho(veiculo.placa);
       } else {
-        setErroEnvio(resultado.message);
-        toast.error(resultado.message);
+        setErroEnvio(resultado.mensagem);
+        toast.error(resultado.mensagem);
       }
     });
   }
 
+  /** Depois de guardar sem internet: começa outro checklist do zero. */
+  function novoChecklist() {
+    for (const e of Object.values(etapasRef.current)) if (e?.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(e.previewUrl);
+    blobs.current = {};
+    setChecklistId(uuid());
+    setEtapas({});
+    setRespostas({});
+    setObservacoesGerais('');
+    setPasso(PASSO_IDENTIFICACAO);
+    setGuardadoNoAparelho(null);
+    setConcluido(false);
+  }
+
   /* ------------------------------ render ------------------------------ */
+
+  if (guardadoNoAparelho) {
+    return (
+      <div className="mx-auto flex max-w-md flex-col gap-4 py-10 text-center" role="status">
+        <CloudOff className="mx-auto size-12 text-icone" />
+        <h1 className="text-xl font-bold">Checklist guardado no aparelho</h1>
+        <p className="text-sm text-muted-foreground">
+          Sem internet agora. O checklist do {guardadoNoAparelho} e as fotos ficaram salvos neste celular e serão enviados
+          sozinhos assim que a conexão voltar — não precisa fazer de novo.
+        </p>
+        <Button type="button" size="lg" onClick={novoChecklist}>
+          Fazer outro checklist
+        </Button>
+        <Link href="/" className={buttonVariants({ variant: 'outline', size: 'lg' })}>
+          Voltar ao início
+        </Link>
+      </div>
+    );
+  }
 
   // motorista sem cadastro ativo ou sem veículo: quem resolve é o supervisor
   if (souMotorista && (!motoristaFixoId || veiculos.length === 0)) {
@@ -416,7 +510,7 @@ export function ChecklistWizard({ userId, veiculos, motoristas, modelos, veiculo
     if (item.condicional && respostas[item.codigo] === false) return 'bg-success';
     if (item.condicional && respostas[item.codigo] === undefined) return 'bg-muted';
     const s = etapa(item.codigo);
-    return s.fase === 'enviada' ? SEVERIDADE_BAR[s.severidade] : 'bg-muted';
+    return temFoto(s) ? SEVERIDADE_BAR[s.severidade] : 'bg-muted';
   };
 
   return (
@@ -433,6 +527,7 @@ export function ChecklistWizard({ userId, veiculos, motoristas, modelos, veiculo
               <p className="truncate text-xs text-muted-foreground">
                 {veiculo ? `${veiculo.placa} · ` : ''}
                 {enviadas.length}/{esperados.length} fotos
+                {noAparelho > 0 ? ` · ${noAparelho} no aparelho` : ''}
               </p>
             </div>
           </div>
@@ -456,7 +551,7 @@ export function ChecklistWizard({ userId, veiculos, motoristas, modelos, veiculo
                     type="button"
                     disabled={!desbloqueado}
                     onClick={() => setPasso(item.codigo)}
-                    aria-label={`${g.grupo}: ${item.nome}${s.fase === 'enviada' ? ` — ${SEVERIDADE_LABEL[s.severidade]}` : ''}`}
+                    aria-label={`${g.grupo}: ${item.nome}${temFoto(s) ? ` — ${SEVERIDADE_LABEL[s.severidade]}` : ''}`}
                     aria-current={passoAtual === item.codigo ? 'step' : undefined}
                     className={cn(
                       'h-2.5 min-w-0 flex-1 rounded-full transition-colors',

@@ -1,14 +1,17 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { CalendarClock, CarFront, ExternalLink, FileText, Fuel, Gauge, ShieldOff, TriangleAlert } from 'lucide-react';
+import { CalendarClock, CarFront, CircleCheck, ClipboardCheck, ExternalLink, FileText, Fuel, Gauge, ShieldOff, TriangleAlert } from 'lucide-react';
 import { ListaAbastecimentos } from '@/components/abastecimentos/lista-abastecimentos';
 import { Placa } from '@/components/placa';
 import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/page-header';
 import { AlertaBadge } from '@/components/ui/status-badges';
+import { AvisoBloqueio } from '@/components/veiculos/aviso-bloqueio';
 import { calcularConsumo, formatKmL } from '@/lib/abastecimento/consumo';
 import { requireMotorista } from '@/lib/auth';
+import { TIPOS_COBRANCA, inicioDaBusca, periodosCobranca, situacaoCobranca } from '@/lib/checklist/cobranca';
+import { tipoLabel } from '@/lib/checklist/etapas';
 import { TIMEZONE, toISODate } from '@/lib/dates';
 import { formatDateISO, formatKm } from '@/lib/format';
 import { calcularAlertaRevisao } from '@/lib/maintenance/alerts';
@@ -30,7 +33,8 @@ export default async function MeuVeiculoPage() {
   const primeiroNome = profile.nome.split(' ')[0];
 
   // RLS: o motorista só recebe o próprio cadastro (se ativo), os veículos dele e os próprios lançamentos.
-  const [{ data: eu }, { data: veiculos }, { data: abastecimentos }] = await Promise.all([
+  const periodos = periodosCobranca(hoje);
+  const [{ data: eu }, { data: veiculos }, { data: abastecimentos }, { data: bloqueios }, { data: checklists }] = await Promise.all([
     supabase.from('motoristas').select('id, cnh_validade').maybeSingle(),
     supabase
       .from('veiculos')
@@ -42,6 +46,10 @@ export default async function MeuVeiculoPage() {
       .order('data_abastecimento', { ascending: false })
       .order('km', { ascending: false })
       .limit(60),
+    // avaria crítica: veículo não liberado até o conserto ou a liberação do supervisor
+    supabase.from('veiculo_bloqueios').select('veiculo_id, motivo, bloqueado_em, checklist_id').is('liberado_em', null),
+    // cobrança: diário de hoje, semanal da semana e mensal do mês (checklists feitos em seu nome)
+    supabase.from('checklists').select('veiculo_id, tipo, data_envio').gte('data_envio', `${inicioDaBusca(periodos)}T00:00:00-03:00`),
   ]);
 
   if (!eu) {
@@ -65,6 +73,7 @@ export default async function MeuVeiculoPage() {
   );
   const consumoGeral = Object.assign({}, ...[...consumoPorVeiculo.values()].map((c) => c.porLancamento));
   const cnh = situacaoCnh(eu.cnh_validade, hoje);
+  const cobranca = situacaoCobranca(lista.map((v) => v.id), checklists ?? [], hoje);
 
   return (
     <div className="flex flex-col gap-6">
@@ -121,6 +130,16 @@ export default async function MeuVeiculoPage() {
                 <Placa placa={v.placa} className="absolute bottom-3 left-3" />
               </div>
               <CardContent className="flex flex-col gap-5 pb-5">
+                {(() => {
+                  const b = (bloqueios ?? []).find((x) => x.veiculo_id === v.id);
+                  return b ? (
+                    <AvisoBloqueio
+                      veiculoId={v.id}
+                      gestao={false}
+                      bloqueio={{ motivo: b.motivo, bloqueadoEm: b.bloqueado_em, checklistId: b.checklist_id, manutencaoId: null }}
+                    />
+                  ) : null;
+                })()}
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-semibold">
                     {[v.marca, v.modelo].filter(Boolean).join(' ') || 'Veículo'}
@@ -128,6 +147,38 @@ export default async function MeuVeiculoPage() {
                   </p>
                   <AlertaBadge nivel={alerta.nivel} />
                 </div>
+
+                {(() => {
+                  const situacao = cobranca.get(v.id);
+                  const bloqueado = (bloqueios ?? []).some((x) => x.veiculo_id === v.id);
+                  if (!situacao || bloqueado) return null;
+                  return (
+                    <div className="flex flex-col gap-2" aria-label="Checklists do período">
+                      <p className="flex items-center gap-1.5 text-sm font-medium">
+                        <ClipboardCheck className="size-4 text-icone" /> Checklists
+                      </p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {TIPOS_COBRANCA.map((tipo) =>
+                          situacao[tipo] ? (
+                            <span key={tipo} className="flex flex-col items-center gap-0.5 rounded-xl bg-success/12 px-1 py-2 text-center text-xs font-semibold text-success-text">
+                              <CircleCheck className="size-4" />
+                              {tipoLabel(tipo)} feito
+                            </span>
+                          ) : (
+                            <Link
+                              key={tipo}
+                              href={`/checklists/novo?veiculo=${v.id}&tipo=${tipo}`}
+                              className="flex flex-col items-center gap-0.5 rounded-xl border border-primary/40 bg-primary/10 px-1 py-2 text-center text-xs font-semibold text-primary"
+                            >
+                              <ClipboardCheck className="size-4" />
+                              Fazer {tipoLabel(tipo).toLowerCase()}
+                            </Link>
+                          ),
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <dl className="grid grid-cols-2 gap-3">
                   <Indicador icone={<Gauge />} rotulo="KM atual" valor={formatKm(v.km_atual)} />

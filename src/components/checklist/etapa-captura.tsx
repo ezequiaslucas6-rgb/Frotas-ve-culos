@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, type ReactNode } from 'react';
-import { AlertTriangle, Camera, CircleCheck, Loader2, MapPin, OctagonAlert, RefreshCw, RotateCcw, X } from 'lucide-react';
+import { AlertTriangle, Camera, CircleCheck, CloudOff, Loader2, MapPin, OctagonAlert, RefreshCw, RotateCcw, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/input';
 import { SEVERIDADE_LABEL, type MarcadorAvaria, type Severidade } from '@/lib/checklist/etapas';
@@ -116,6 +116,10 @@ export function EtapaCaptura({ titulo, estado, somenteProblema = false, onFile, 
               {estado.fase === 'enviada' ? (
                 <span className="flex items-center gap-1 rounded-full bg-success px-2.5 py-1 text-xs font-medium text-success-foreground shadow">
                   <CircleCheck className="size-3.5" /> Enviada{estado.tamanho ? ` · ${estado.tamanho}` : ''}
+                </span>
+              ) : estado.fase === 'pendente' ? (
+                <span className="flex items-center gap-1 rounded-full bg-warning px-2.5 py-1 text-xs font-medium text-white shadow">
+                  <CloudOff className="size-3.5" /> No aparelho · envia quando houver internet
                 </span>
               ) : ocupado ? (
                 <span className="flex items-center gap-1 rounded-full bg-black/70 px-2.5 py-1 text-xs font-medium text-white">

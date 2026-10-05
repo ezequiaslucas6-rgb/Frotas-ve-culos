@@ -1,12 +1,22 @@
-import { CalendarDays, CircleAlert, CircleCheck, CircleHelp, TriangleAlert, Wrench } from 'lucide-react';
+import { Ban, CalendarDays, CircleAlert, CircleCheck, CircleHelp, TriangleAlert, Wrench } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { formatDateISO } from '@/lib/format';
 import type { NivelAlerta, SaudeVeiculo } from '@/lib/maintenance/alerts';
 import { descreverSituacaoCnh, type SituacaoCnh } from '@/lib/motoristas/cnh';
 import type { Enums } from '@/types/database';
 
-/** Semáforo da frota: Verde = Liberado, Amarelo = Atenção, Vermelho = Manutenção/Avaria. */
-export function SaudeBadge({ saude }: { saude: SaudeVeiculo }) {
+/**
+ * Semáforo da frota: Verde = Liberado, Amarelo = Atenção, Vermelho = Manutenção/Avaria.
+ * `naoLiberado`: avaria crítica no checklist, veículo bloqueado até o conserto ou a liberação.
+ */
+export function SaudeBadge({ saude, naoLiberado = false }: { saude: SaudeVeiculo; naoLiberado?: boolean }) {
+  if (naoLiberado) {
+    return (
+      <Badge variant="danger">
+        <Ban /> Não liberado
+      </Badge>
+    );
+  }
   switch (saude) {
     case 'liberado':
       return (

@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ArrowRight, CircleCheck, ClipboardCheck, IdCard, Plus, TriangleAlert, Wrench } from 'lucide-react';
 import { AtualizarAlertasButton } from '@/components/atualizar-alertas-button';
+import { CobrancaChecklists } from '@/components/painel/cobranca-checklists';
+import { Badge } from '@/components/ui/badge';
 import { Donut } from '@/components/charts/donut';
 import { Sparkline, type Ponto } from '@/components/charts/sparkline';
 import { FilialFilter } from '@/components/filial-filter';
@@ -10,10 +12,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState, PageHeader } from '@/components/ui/page-header';
 import { AlertaBadge, ChecklistStatusBadge, CnhBadge, SaudeBadge } from '@/components/ui/status-badges';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { descreverAnomalia, detectarConsumoAnormal, formatKmL } from '@/lib/abastecimento/consumo';
 import { requireSession } from '@/lib/auth';
+import { inicioDaBusca, periodosCobranca, resumoCobranca, situacaoCobranca } from '@/lib/checklist/cobranca';
 import { tipoLabel } from '@/lib/checklist/etapas';
 import { addDays, toISODate } from '@/lib/dates';
-import { formatBRL, formatDateTime, formatFilial, formatKm } from '@/lib/format';
+import { formatBRL, formatDateISO, formatDateTime, formatFilial, formatKm } from '@/lib/format';
 import { avaliarVeiculoPainel } from '@/lib/maintenance/alerts';
 import { descreverAlerta } from '@/lib/maintenance/describe';
 import { CNH_AVISO_DIAS, situacaoCnh } from '@/lib/motoristas/cnh';
@@ -49,12 +53,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const hoje = toISODate();
   const meses = ultimosMeses(hoje, 6);
   const inicioMes = `${meses.at(-1)}-01`;
+  const periodos = periodosCobranca(hoje);
 
   let veiculosQ = supabase.from('vw_veiculos_painel').select('*').order('placa');
   let custosQ = supabase.from('manutencoes').select('custo, filial_id, data_manutencao').gte('data_manutencao', `${meses[0]}-01`);
+  // 6 meses de abastecimentos: custo por mês e a referência de consumo (km/l) de cada veículo
   let combustivelQ = supabase
     .from('abastecimentos')
-    .select('valor_total, filial_id, data_abastecimento')
+    .select('id, veiculo_id, km, litros, tanque_cheio, combustivel, valor_total, filial_id, data_abastecimento')
     .gte('data_abastecimento', `${meses[0]}-01`);
   // CNH vencida, vencendo em até 30 dias ou sem validade (motoristas em atividade)
   let cnhQ = supabase
@@ -64,7 +70,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     .or(`cnh_validade.is.null,cnh_validade.lte.${addDays(hoje, CNH_AVISO_DIAS)}`)
     .order('cnh_validade', { ascending: true, nullsFirst: false })
     .limit(50);
-  let checklistsMesQ = supabase.from('checklists').select('veiculo_id').gte('data_envio', `${inicioMes}T00:00:00-03:00`);
+  // cobrança: diário de hoje, semanal desde segunda, mensal desde o dia 1 (horário de Brasília)
+  let cobrancaQ = supabase
+    .from('checklists')
+    .select('veiculo_id, tipo, data_envio')
+    .gte('data_envio', `${inicioDaBusca(periodos)}T00:00:00-03:00`);
   let ultimosQ = supabase
     .from('checklists')
     .select('id, data_envio, tipo, status, veiculos(placa, modelo), motoristas(nome)')
@@ -75,14 +85,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     custosQ = custosQ.eq('filial_id', filialId);
     combustivelQ = combustivelQ.eq('filial_id', filialId);
     cnhQ = cnhQ.eq('filial_id', filialId);
-    checklistsMesQ = checklistsMesQ.eq('filial_id', filialId);
+    cobrancaQ = cobrancaQ.eq('filial_id', filialId);
     ultimosQ = ultimosQ.eq('filial_id', filialId);
   }
 
   const [
     { data: veiculosRaw },
     { data: custos },
-    { data: checklistsMes },
+    { data: cobranca },
     { data: ultimos },
     { data: filiais },
     { data: combustivel },
@@ -90,7 +100,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   ] = await Promise.all([
     veiculosQ,
     custosQ,
-    checklistsMesQ,
+    cobrancaQ,
     ultimosQ,
     isAdmin ? supabase.from('filiais').select('id, nome_cidade, uf').order('nome_cidade') : Promise.resolve({ data: null }),
     combustivelQ,
@@ -103,7 +113,16 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const liberados = conta('liberado');
   const atencao = conta('atencao');
   const manutencao = conta('manutencao');
-  const verificados = new Set((checklistsMes ?? []).map((c) => c.veiculo_id)).size;
+  // não liberados estão parados aguardando conserto: ficam fora da cobrança
+  const operando = veiculos.filter((v) => !v.naoLiberado);
+  const resumo = resumoCobranca(operando, situacaoCobranca(operando.map((v) => v.id), cobranca ?? [], hoje));
+
+  // consumo fora do padrão no último tanque (dos últimos 60 dias)
+  const abastecimentosPorVeiculo = Map.groupBy(combustivel ?? [], (a) => a.veiculo_id);
+  const consumoAnormal = veiculos
+    .map((v) => ({ v, a: detectarConsumoAnormal(abastecimentosPorVeiculo.get(v.id) ?? []).ultima }))
+    .filter((x): x is { v: (typeof veiculos)[number]; a: NonNullable<typeof x.a> } => x.a != null && x.a.data >= addDays(hoje, -60))
+    .sort((x, y) => x.a.variacao - y.a.variacao);
 
   // custo da frota por mês (manutenção + combustível, série única)
   const manutencaoMes = new Map(meses.map((m) => [m, 0]));
@@ -224,9 +243,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <StatTile valor={atencao} rotulo="Em atenção" pct={pct(atencao)} cor="var(--warning)" icone={<TriangleAlert />} />
           <StatTile valor={manutencao} rotulo="Manutenção/Avaria" pct={pct(manutencao)} cor="var(--destructive)" icone={<Wrench />} />
           <StatTile
-            valor={verificados}
-            rotulo={`Checklist no mês · de ${total}`}
-            pct={pct(verificados)}
+            valor={resumo.diario.feitos}
+            rotulo={`Diário hoje · de ${resumo.diario.total}`}
+            pct={resumo.diario.total ? Math.round((resumo.diario.feitos / resumo.diario.total) * 100) : 0}
             cor="var(--icone)"
             icone={<ClipboardCheck />}
           />
@@ -275,6 +294,41 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <CobrancaChecklists resumo={resumo} periodos={periodos} foraDaCobranca={total - operando.length} className="lg:col-span-2" />
+
+        <Card className="gap-3 px-6 py-6">
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle>Consumo fora do padrão</CardTitle>
+            <span className="text-xs text-muted-foreground">{consumoAnormal.length} veículo(s)</span>
+          </div>
+          {consumoAnormal.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">Nenhum consumo fora do padrão.</p>
+          ) : (
+            <ul className="divide-y divide-border/60">
+              {consumoAnormal.slice(0, 6).map(({ v, a }) => (
+                <li key={v.id}>
+                  <Link href={`/veiculos/${v.id}`} className="flex items-start justify-between gap-3 py-2.5">
+                    <span className="min-w-0">
+                      <span className="font-semibold">{formatPlaca(v.placa)}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        {formatKmL(a.kml)} · normal {formatKmL(a.referencia)} · {formatDateISO(a.data)}
+                      </span>
+                    </span>
+                    <Badge variant={a.tipo === 'queda' ? 'danger' : 'warning'} className="shrink-0">
+                      {descreverAnomalia(a).replace(' do normal', '')}
+                    </Badge>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-auto text-xs text-muted-foreground">
+            Queda de 25% ou mais no km/l: possível vazamento, desvio de combustível ou KM digitado errado.
+          </p>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <Card className="px-0">
           <CardHeader>
             <CardTitle>Requer atenção</CardTitle>
@@ -296,7 +350,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                         {v.motivos.join(' · ')}
                       </p>
                     </div>
-                    <SaudeBadge saude={v.saude} />
+                    <SaudeBadge saude={v.saude} naoLiberado={v.naoLiberado} />
                   </li>
                 ))}
               </ul>

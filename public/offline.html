@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#1d1e26" />
+    <title>Sem internet · Rodar</title>
+    <link rel="icon" href="/icons/icon.svg" />
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100dvh; display: grid; place-items: center; padding: 24px 16px;
+             background: #1d1e26; color: #f1f1f5; font: 16px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+      main { width: 100%; max-width: 380px; text-align: center; }
+      img { width: 64px; height: 64px; border-radius: 16px; }
+      h1 { font-size: 22px; margin: 16px 0 8px; }
+      p { margin: 0 0 12px; color: #9294a3; font-size: 15px; }
+      .fila { color: #f1f1f5; background: #2a2b35; border-radius: 12px; padding: 10px 12px; }
+      a, button { display: block; width: 100%; margin-top: 12px; padding: 14px; border-radius: 14px; border: 0;
+                  font-family: inherit; font-size: 16px; font-weight: 600; line-height: 1.2;
+                  text-decoration: none; cursor: pointer; }
+      a { background: #007fd6; color: #fff; }
+      button { background: #33343f; color: #f1f1f5; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/icons/icon.svg" alt="Rodar" />
+      <h1>Sem internet</h1>
+      <p>O checklist funciona sem sinal: as fotos ficam guardadas no celular e são enviadas sozinhas quando a internet voltar.</p>
+      <p class="fila" id="fila" hidden></p>
+      <a href="/checklists/novo">Fazer checklist sem internet</a>
+      <button type="button" onclick="location.reload()">Tentar de novo</button>
+    </main>
+    <script>
+      // quantos checklists estão guardados no aparelho, esperando a internet
+      try {
+        const req = indexedDB.open('rodar-offline');
+        req.onsuccess = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains('envios')) return;
+          const conta = db.transaction('envios').objectStore('envios').count();
+          conta.onsuccess = () => {
+            if (!conta.result) return;
+            const el = document.getElementById('fila');
+            el.textContent = conta.result === 1 ? '1 checklist guardado aguardando envio.' : conta.result + ' checklists guardados aguardando envio.';
+            el.hidden = false;
+          };
+        };
+      } catch (e) {}
+      addEventListener('online', () => location.reload());
+    </script>
+  </body>
+</html>

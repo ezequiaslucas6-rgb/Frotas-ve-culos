@@ -44,22 +44,30 @@ export interface Consumo {
   media: number | null;
 }
 
+/** Um ciclo fechado "tanque cheio -> tanque cheio": distância, litros e km/l. */
+export interface CicloConsumo {
+  /** lançamento (tanque cheio) que fecha o ciclo */
+  id: string;
+  data: string;
+  combustivel: Combustivel;
+  distancia: number;
+  litros: number;
+  kml: number;
+}
+
 /**
- * Consumo pelo método tanque cheio a tanque cheio, por veículo: a distância entre
+ * Ciclos pelo método tanque cheio a tanque cheio, por veículo: a distância entre
  * dois abastecimentos completos dividida pelos litros colocados depois do primeiro
  * (inclui os parciais do meio). GNV (m³) fica fora do cálculo em km/l.
  */
-export function calcularConsumo(lancamentos: LancamentoConsumo[]): Consumo {
+export function ciclosConsumo(lancamentos: LancamentoConsumo[]): CicloConsumo[] {
   const ordenados = lancamentos
     .filter((l) => l.combustivel !== 'gnv')
     .toSorted((a, b) => a.km - b.km || a.data_abastecimento.localeCompare(b.data_abastecimento));
 
-  const porLancamento: Record<string, number> = {};
+  const ciclos: CicloConsumo[] = [];
   let kmBase: number | null = null;
   let litros = 0;
-  let kmTotal = 0;
-  let litrosTotal = 0;
-
   for (const l of ordenados) {
     if (kmBase === null) {
       if (l.tanque_cheio) kmBase = l.km;
@@ -69,16 +77,78 @@ export function calcularConsumo(lancamentos: LancamentoConsumo[]): Consumo {
     if (!l.tanque_cheio) continue;
     const distancia = l.km - kmBase;
     if (distancia > 0 && litros > 0) {
-      porLancamento[l.id] = distancia / litros;
-      kmTotal += distancia;
-      litrosTotal += litros;
+      ciclos.push({ id: l.id, data: l.data_abastecimento, combustivel: l.combustivel, distancia, litros, kml: distancia / litros });
     }
     kmBase = l.km;
     litros = 0;
   }
-
-  return { porLancamento, media: litrosTotal > 0 ? kmTotal / litrosTotal : null };
+  return ciclos;
 }
+
+export function calcularConsumo(lancamentos: LancamentoConsumo[]): Consumo {
+  const ciclos = ciclosConsumo(lancamentos);
+  const kmTotal = ciclos.reduce((s, c) => s + c.distancia, 0);
+  const litrosTotal = ciclos.reduce((s, c) => s + c.litros, 0);
+  return {
+    porLancamento: Object.fromEntries(ciclos.map((c) => [c.id, c.kml])),
+    media: litrosTotal > 0 ? kmTotal / litrosTotal : null,
+  };
+}
+
+/** Queda que dispara o alerta (vazamento, desvio de combustível ou hodômetro errado). */
+export const QUEDA_CONSUMO = 0.25;
+/** Alta que indica hodômetro suspeito (ou abastecimento não lançado). */
+export const ALTA_CONSUMO = 0.6;
+/** Referência: média dos últimos ciclos normais do mesmo combustível. */
+export const CICLOS_REFERENCIA = 5;
+export const CICLOS_MINIMOS = 2;
+
+export interface AnomaliaConsumo {
+  id: string;
+  data: string;
+  kml: number;
+  /** km/l normal do veículo (mesmo combustível) */
+  referencia: number;
+  /** ex.: -0.32 = 32% abaixo do normal */
+  variacao: number;
+  tipo: 'queda' | 'alta';
+}
+
+/**
+ * Consumo fora do padrão, por veículo. Cada ciclo é comparado à média ponderada dos até
+ * CICLOS_REFERENCIA ciclos NORMAIS anteriores com o mesmo combustível (etanol e gasolina
+ * rendem diferente). Ciclos anormais não entram na referência. `ultima` = o ciclo mais
+ * recente, se for anormal (é o que o painel cobra).
+ */
+export function detectarConsumoAnormal(lancamentos: LancamentoConsumo[]): {
+  porLancamento: Record<string, AnomaliaConsumo>;
+  ultima: AnomaliaConsumo | null;
+} {
+  const ciclos = ciclosConsumo(lancamentos);
+  const normais: CicloConsumo[] = [];
+  const porLancamento: Record<string, AnomaliaConsumo> = {};
+  for (const c of ciclos) {
+    const base = normais.filter((n) => n.combustivel === c.combustivel).slice(-CICLOS_REFERENCIA);
+    if (base.length >= CICLOS_MINIMOS) {
+      const referencia = base.reduce((s, n) => s + n.distancia, 0) / base.reduce((s, n) => s + n.litros, 0);
+      const variacao = (c.kml - referencia) / referencia;
+      if (variacao <= -QUEDA_CONSUMO || variacao >= ALTA_CONSUMO) {
+        porLancamento[c.id] = { id: c.id, data: c.data, kml: c.kml, referencia, variacao, tipo: variacao < 0 ? 'queda' : 'alta' };
+        continue;
+      }
+    }
+    normais.push(c);
+  }
+  const ultimo = ciclos.at(-1);
+  return { porLancamento, ultima: ultimo ? (porLancamento[ultimo.id] ?? null) : null };
+}
+
+const pct = (v: number) => `${Math.round(Math.abs(v) * 100)}%`;
+/** "32% abaixo do normal" / "70% acima do normal" */
+export const descreverAnomalia = (a: AnomaliaConsumo) => `${pct(a.variacao)} ${a.tipo === 'queda' ? 'abaixo' : 'acima'} do normal`;
+/** O que conferir, em linguagem simples. */
+export const dicaAnomalia = (a: AnomaliaConsumo) =>
+  a.tipo === 'queda' ? 'Possível vazamento, desvio de combustível ou KM digitado errado.' : 'Confira o hodômetro (KM digitado errado ou abastecimento não lançado).';
 
 const kml = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 export const formatKmL = (v: number | null | undefined) => (v == null ? '—' : `${kml.format(v)} km/l`);

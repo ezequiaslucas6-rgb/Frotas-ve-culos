@@ -8,7 +8,7 @@ import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState, PageHeader } from '@/components/ui/page-header';
 import { MotoristaStatusBadge } from '@/components/ui/status-badges';
-import { calcularConsumo } from '@/lib/abastecimento/consumo';
+import { calcularConsumo, detectarConsumoAnormal } from '@/lib/abastecimento/consumo';
 import { requireSession } from '@/lib/auth';
 import { toISODate } from '@/lib/dates';
 import { formatFilial, formatKm } from '@/lib/format';
@@ -41,6 +41,7 @@ export default async function MotoristaPage({ params }: { params: Promise<{ id: 
   ]);
   const porVeiculo = Map.groupBy(abastecimentos ?? [], (a) => a.veiculo_id);
   const consumo = Object.assign({}, ...[...porVeiculo.values()].map((lista) => calcularConsumo(lista).porLancamento));
+  const anomalias = Object.assign({}, ...[...porVeiculo.values()].map((lista) => detectarConsumoAnormal(lista).porLancamento));
 
   return (
     <div className="flex flex-col gap-6">
@@ -130,7 +131,7 @@ export default async function MotoristaPage({ params }: { params: Promise<{ id: 
           {(abastecimentos ?? []).length === 0 ? (
             <EmptyState title="Nenhum abastecimento lançado" />
           ) : (
-            <ListaAbastecimentos itens={abastecimentos ?? []} consumo={consumo} urls={urlsCupom} mostrarVeiculo />
+            <ListaAbastecimentos itens={abastecimentos ?? []} consumo={consumo} anomalias={anomalias} urls={urlsCupom} mostrarVeiculo />
           )}
         </CardContent>
       </Card>

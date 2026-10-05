@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { RegistrarServiceWorker } from '@/components/offline/registrar-sw';
 import { cn } from '@/lib/utils';
 import { LoginForm } from './login-form';
 import { OndaSuave } from './onda-suave';
@@ -48,6 +49,8 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       </section>
 
       <section className="flex items-start justify-center px-6 pt-4 pb-safe md:items-center md:p-6">
+        {/* saiu da conta: a tela do checklist guardada para uso offline era de quem saiu */}
+        <RegistrarServiceWorker limpar />
         <LoginForm next={next} />
       </section>
     </main>

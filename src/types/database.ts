@@ -13,6 +13,7 @@ type ManutencaoTipo = 'preventiva' | 'corretiva';
 type AlertaStatus = 'ok' | 'proximo' | 'vencido';
 type Combustivel = 'gasolina' | 'gasolina_aditivada' | 'etanol' | 'diesel_s10' | 'diesel_s500' | 'gnv';
 type ChecklistTipo = 'diario' | 'semanal' | 'mensal';
+type ManutencaoSituacao = 'aberta' | 'concluida';
 
 type FilialRow = { id: string; nome_cidade: string; uf: string; created_at: string };
 type ProfileRow = {
@@ -111,6 +112,24 @@ type ManutencaoRow = {
   fornecedor: string | null;
   created_by: string | null;
   created_at: string;
+  /** aberta = conserto pendente (ex.: aberta por avaria crítica no checklist) */
+  situacao: ManutencaoSituacao;
+  checklist_id: string | null;
+  concluida_em: string | null;
+  concluida_por: string | null;
+};
+type VeiculoBloqueioRow = {
+  id: string;
+  veiculo_id: string;
+  filial_id: string;
+  checklist_id: string | null;
+  manutencao_id: string | null;
+  motivo: string;
+  bloqueado_em: string;
+  liberado_em: string | null;
+  liberado_por: string | null;
+  liberacao: 'conserto' | 'responsavel' | null;
+  liberacao_obs: string | null;
 };
 type VeiculoPainelRow = {
   id: string;
@@ -136,6 +155,14 @@ type VeiculoPainelRow = {
   ultima_preventiva_id: string | null;
   motorista_id: string | null;
   motorista_nome: string | null;
+  /** bloqueio aberto = veículo "não liberado" */
+  bloqueio_id: string | null;
+  bloqueado_em: string | null;
+  bloqueio_motivo: string | null;
+  bloqueio_checklist_id: string | null;
+  bloqueio_manutencao_id: string | null;
+  ultima_liberacao_em: string | null;
+  manutencoes_abertas: number;
 };
 type AbastecimentoRow = {
   id: string;
@@ -295,6 +322,34 @@ export type Database = {
           },
         ];
       };
+      veiculo_bloqueios: {
+        Row: VeiculoBloqueioRow;
+        Insert: Ins<VeiculoBloqueioRow, 'veiculo_id' | 'filial_id' | 'motivo'>;
+        Update: Partial<VeiculoBloqueioRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'veiculo_bloqueios_veiculo_fk';
+            columns: ['veiculo_id', 'filial_id'];
+            isOneToOne: false;
+            referencedRelation: 'veiculos';
+            referencedColumns: ['id', 'filial_id'];
+          },
+          {
+            foreignKeyName: 'veiculo_bloqueios_checklist_id_fkey';
+            columns: ['checklist_id'];
+            isOneToOne: false;
+            referencedRelation: 'checklists';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'veiculo_bloqueios_liberado_por_fkey';
+            columns: ['liberado_por'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       checklist_itens: {
         Row: ChecklistItemRow;
         Insert: Ins<ChecklistItemRow, 'codigo' | 'nome' | 'grupo' | 'ordem'>;
@@ -372,6 +427,10 @@ export type Database = {
         Args: { p_tipo: ChecklistTipo; p_itens: string[] };
         Returns: undefined;
       };
+      liberar_veiculo: {
+        Args: { p_veiculo_id: string; p_motivo: string };
+        Returns: undefined;
+      };
       atualizar_meu_perfil: {
         Args: { p_nome: string | null; p_avatar_url: string | null };
         Returns: undefined;
@@ -385,6 +444,7 @@ export type Database = {
       alerta_status: AlertaStatus;
       checklist_tipo: ChecklistTipo;
       combustivel: Combustivel;
+      manutencao_situacao: ManutencaoSituacao;
     };
     CompositeTypes: { [_ in never]: never };
   };

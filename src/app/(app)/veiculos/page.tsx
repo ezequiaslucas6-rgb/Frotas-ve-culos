@@ -110,7 +110,7 @@ export default async function VeiculosPage({ searchParams }: { searchParams: Pro
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <SaudeBadge saude={v.saude} />
+                    <SaudeBadge saude={v.saude} naoLiberado={v.naoLiberado} />
                     {v.alerta.nivel !== 'ok' ? <AlertaBadge nivel={v.alerta.nivel} /> : null}
                   </div>
                   <p className="flex items-center gap-1 text-xs text-muted-foreground">

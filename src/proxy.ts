@@ -11,7 +11,8 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // ignora estáticos, imagens, ícones/manifest e o cron (que autentica por Bearer próprio)
-    '/((?!_next/static|_next/image|favicon.ico|icons/|manifest.webmanifest|api/cron/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
+    // ignora estáticos, imagens, ícones/manifest, o service worker e a página offline (públicos)
+    // e o cron (que autentica por Bearer próprio)
+    '/((?!_next/static|_next/image|favicon.ico|icons/|manifest.webmanifest|sw\\.js|offline\\.html|api/cron/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
   ],
 };

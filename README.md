@@ -20,9 +20,10 @@ roda na **sua VPS** em Docker, atrás do Nginx, num subdomínio com HTTPS.
    4. `20260103000100_motoristas_acesso.sql`
    5. `20260105000000_checklist_tipos.sql` (checklists diário/semanal/mensal)
    6. `20260106000000_checklist_motorista.sql` (o motorista faz o checklist dos próprios veículos)
+   7. `20260107000000_avaria_bloqueio.sql` (avaria crítica abre manutenção e deixa o veículo não liberado)
 
    **Já tinha o sistema instalado?** Rode apenas o que ainda não rodou (nessa ordem, separados) e depois atualize o
-   app na VPS. Quem já está com os itens 1–5 roda só o item 6.
+   app na VPS. Quem já está com os itens 1–6 roda só o item 7.
 2. Execute `supabase/seed.sql` (filiais de exemplo).
 3. **Primeiro Administrador Geral (obrigatório).** Crie o usuário em *Authentication → Users → Add user* (marque
    *Auto Confirm User*) e vincule-o como admin:
@@ -145,6 +146,17 @@ posto e **foto do cupom**. O KM do veículo é atualizado automaticamente (nunca
 último registrado no mesmo dia. O **consumo (km/l)** usa o método tanque cheio a tanque cheio (parciais somam ao ciclo
 seguinte). O painel passa a mostrar o **custo da frota = manutenção + combustível**.
 
+**Consumo fora do padrão.** Cada ciclo (tanque cheio a tanque cheio) é comparado com a média dos até 5 ciclos normais
+anteriores do mesmo veículo e combustível (precisa de pelo menos 2):
+
+| Variação | Aviso | Causas prováveis |
+|---|---|---|
+| km/l **≥ 25% abaixo** | Consumo X% abaixo do normal | vazamento, desvio de combustível, KM lançado errado, problema mecânico |
+| km/l **≥ 60% acima** | Consumo X% acima do normal | KM digitado errado ou tanque que não foi completado |
+
+Aparece no lançamento (lista de abastecimentos, veículo e motorista) e no painel (*Consumo fora do padrão*, último ciclo
+dos últimos 60 dias). Um ciclo fora do padrão não entra na média dos próximos.
+
 ## CNH
 
 Seção própria no cadastro do motorista: nº de registro, categoria, validade, emissão, 1ª habilitação, UF, EAR e
@@ -186,6 +198,28 @@ Só câmera: não existe opção de galeria (no APK o campo abre a câmera diret
 final é uma RPC atômica (`salvar_checklist`) que confere as fotos com o modelo do tipo e grava checklist + fotos + KM
 numa transação.
 
+**Cobrança.** O painel mostra *Checklists pendentes*: quais veículos ainda não fizeram o **diário de hoje**, o
+**semanal desta semana** (de segunda a domingo) e o **mensal deste mês** (horário de São Paulo), com atalho para fazer.
+Um checklist maior cobre os menores do mesmo período (o mensal vale como semanal e diário; o semanal, como diário).
+Veículos *não liberados* ficam fora da cobrança até o conserto. O motorista vê a mesma situação em **Meu veículo**.
+
+**Sem sinal (APK e navegador).** O checklist funciona sem internet: as fotos ficam guardadas no aparelho (*No aparelho ·
+envia quando houver internet*) e, ao tocar em *Enviar*, o checklist inteiro vai para uma fila no celular. Quando a
+conexão volta, ele é enviado sozinho, com as fotos, em qualquer tela do app (ou na próxima vez que o app abrir). Um
+aviso mostra quantos estão esperando. Se o servidor recusar (ex.: KM menor que o último), o aviso mostra o motivo.
+Sem sinal, a tela do checklist abre do próprio aparelho; as demais telas mostram *Sem internet* com o atalho para o
+checklist. Para isso o app precisa ter sido aberto **com internet ao menos uma vez** depois da atualização.
+
+## Avaria crítica → manutenção
+Checklist com **Avaria** (o nível crítico) abre sozinho uma **manutenção corretiva** vinculada ao checklist, com a
+descrição das avarias, e marca o veículo como **🚫 Não liberado** (painel, lista, veículo e Meu veículo do motorista).
+Mais avarias no mesmo veículo antes do conserto entram na mesma manutenção.
+
+O veículo volta a ficar liberado de duas formas:
+- **Concluindo a manutenção** (*Manutenções → Concluir*): informa data, KM, custo e oficina; a avaria sai do semáforo.
+- **Liberação pelo responsável** (supervisor da filial ou Administrador Geral) com **motivo obrigatório**, que fica
+  registrado com o nome e a hora. O conserto continua pendente (🟡 *Conserto pendente*) até a manutenção ser concluída.
+
 ## Alertas de manutenção
 | Nível | Regra (vale o pior entre KM e período) |
 |---|---|
@@ -203,6 +237,7 @@ Semáforo: 🔴 Manutenção/Avaria · 🟡 Atenção · 🟢 Liberado (detalhes
 - Os caches de perfil e de URLs assinadas ficam na memória do container (um único processo, como na VPS); ao reiniciar,
   recomeçam vazios. Fotos de veículos enviadas antes desta versão não têm miniatura: a lista usa a foto completa até
   ela ser trocada.
-- Sem fila offline: sem sinal, o envio falha com aviso e o rascunho preserva o que já subiu.
+- Sem sinal funciona só o checklist (abastecimento e cadastros precisam de internet). Os checklists guardados ficam
+  no aparelho em que foram feitos: desinstalar o app ou limpar os dados dele antes do envio os perde.
 - A tabela `checklist_rascunhos` (migration 20260102) foi criada para a versão Streamlit; a web guarda o rascunho no
   próprio aparelho e não a usa — pode ficar como está.

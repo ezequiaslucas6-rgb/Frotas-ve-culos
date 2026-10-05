@@ -1,6 +1,7 @@
 import type { ChecklistTipo, MarcadorAvaria, Severidade } from '@/lib/checklist/etapas';
 
-export type FaseEtapa = 'vazia' | 'processando' | 'enviando' | 'enviada' | 'erro';
+/** pendente = foto guardada no aparelho, sobe quando houver internet (vale para avançar) */
+export type FaseEtapa = 'vazia' | 'processando' | 'enviando' | 'enviada' | 'pendente' | 'erro';
 
 export interface EtapaState {
   fase: FaseEtapa;
@@ -40,6 +41,8 @@ export interface MotoristaWizard {
 
 export interface EtapaSalva {
   fotoPath: string;
+  /** a foto ainda está só no aparelho (IndexedDB) */
+  local?: boolean;
   severidade: Severidade;
   observacao: string;
   marcadores: MarcadorAvaria[];

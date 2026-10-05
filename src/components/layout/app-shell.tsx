@@ -7,6 +7,7 @@ import { LogOut, Menu, UserRound, X } from 'lucide-react';
 import { signOut } from '@/actions/auth';
 import { Volante } from '@/components/marca/volante';
 import { AreaConteudo, NavegacaoProvider } from '@/components/navegacao';
+import { SincronizacaoOffline } from '@/components/offline/sincronizacao';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -15,6 +16,8 @@ import { cn } from '@/lib/utils';
 import type { Tables } from '@/types/database';
 
 interface AppShellProps {
+  /** usuário logado: a fila de checklists guardados sem internet é por usuário */
+  userId: string;
   nome: string;
   papel: string;
   role: Tables<'profiles'>['role'];
@@ -36,7 +39,7 @@ function Logo({ className }: { className?: string }) {
   );
 }
 
-export function AppShell({ nome, papel, role, filialLabel, avatarUrl, children }: AppShellProps) {
+export function AppShell({ userId, nome, papel, role, filialLabel, avatarUrl, children }: AppShellProps) {
   const pathname = usePathname();
   // o menu guarda em qual rota foi aberto: navegar para outra rota o fecha
   const [menuPath, setMenuPath] = useState<string | null>(null);
@@ -132,6 +135,9 @@ export function AppShell({ nome, papel, role, filialLabel, avatarUrl, children }
       <AreaConteudo className={cn('mx-auto w-full max-w-[1280px] px-4 pt-2 pb-8 md:px-8', !immersive && 'pb-32 md:pb-10')}>
         {children}
       </AreaConteudo>
+
+      {/* checklists guardados sem internet: envio automático (o aviso some dentro do checklist) */}
+      <SincronizacaoOffline userId={userId} oculto={immersive} />
 
       {/* Barra inferior (celular) com câmera ao centro */}
       {!immersive ? (

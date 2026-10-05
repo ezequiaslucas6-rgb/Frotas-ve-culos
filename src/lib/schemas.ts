@@ -144,6 +144,15 @@ export const manutencaoSchema = z.object({
   fornecedor: optionalText,
 });
 
+/** Conclusão de uma manutenção aberta (ex.: conserto da avaria do checklist): libera o veículo. */
+export const concluirManutencaoSchema = manutencaoSchema.omit({ veiculo_id: true, tipo: true }).extend({ id: uuid });
+
+/** Liberação do veículo pelo responsável (supervisor/admin), com o motivo. */
+export const liberarVeiculoSchema = z.object({
+  veiculo_id: uuid,
+  motivo: z.string('Informe o motivo da liberação.').trim().min(5, 'Informe o motivo da liberação (mínimo 5 caracteres).').max(500),
+});
+
 const marcadorSchema = z.object({ x: z.number().min(0).max(100), y: z.number().min(0).max(100) });
 
 const codigoItem = z.string().regex(/^[a-z0-9_]{2,40}$/, 'Item de checklist inválido.');

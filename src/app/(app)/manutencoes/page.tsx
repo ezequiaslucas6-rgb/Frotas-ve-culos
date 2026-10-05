@@ -35,6 +35,8 @@ export default async function ManutencoesPage({ searchParams }: { searchParams: 
   const { supabase, isAdmin } = session;
   const filialId = resolveFilialFilter(session, sp);
   const tipo = first(sp.tipo) === 'preventiva' || first(sp.tipo) === 'corretiva' ? (first(sp.tipo) as 'preventiva' | 'corretiva') : null;
+  // "abertas" = conserto pendente (ex.: avaria crítica do checklist)
+  const somenteAbertas = first(sp.situacao) === 'aberta';
   const mes = first(sp.mes);
   const periodo = monthRange(mes);
   const page = parsePage(sp.page);
@@ -43,6 +45,7 @@ export default async function ManutencoesPage({ searchParams }: { searchParams: 
   const aplicar = <T extends { eq: (c: string, v: string) => T; gte: (c: string, v: string) => T; lt: (c: string, v: string) => T }>(q: T): T => {
     if (filialId) q = q.eq('filial_id', filialId);
     if (tipo) q = q.eq('tipo', tipo);
+    if (somenteAbertas) q = q.eq('situacao', 'aberta');
     if (periodo) q = q.gte('data_manutencao', periodo.from).lt('data_manutencao', periodo.to);
     return q;
   };
@@ -82,6 +85,10 @@ export default async function ManutencoesPage({ searchParams }: { searchParams: 
           <option value="">Todos os tipos</option>
           <option value="preventiva">Preventivas</option>
           <option value="corretiva">Corretivas</option>
+        </Select>
+        <Select name="situacao" defaultValue={somenteAbertas ? 'aberta' : ''} aria-label="Situação" className="sm:w-48">
+          <option value="">Todas as situações</option>
+          <option value="aberta">Abertas (conserto pendente)</option>
         </Select>
         <Input type="month" name="mes" defaultValue={mes ?? ''} aria-label="Mês" className="sm:w-44" />
         <Button type="submit" variant="secondary">
@@ -123,9 +130,10 @@ export default async function ManutencoesPage({ searchParams }: { searchParams: 
                     {m.veiculos ? formatPlaca(m.veiculos.placa) : '—'}
                   </Link>
                   <Badge variant={m.tipo === 'preventiva' ? 'secondary' : 'warning'}>{m.tipo === 'preventiva' ? 'Preventiva' : 'Corretiva'}</Badge>
+                  {m.situacao === 'aberta' ? <Badge variant="danger">Aberta</Badge> : null}
                   {m.status_alerta !== 'ok' ? <AlertaBadge nivel={m.status_alerta} /> : null}
                 </div>
-                <p className="mt-1 line-clamp-2 text-sm">{m.descricao}</p>
+                <p className="mt-1 line-clamp-2 text-sm whitespace-pre-line">{m.descricao}</p>
                 <p className="text-xs text-muted-foreground">
                   {formatDateISO(m.data_manutencao)} · {formatKm(m.km_registro)}
                   {m.fornecedor ? ` · ${m.fornecedor}` : ''}
@@ -133,7 +141,13 @@ export default async function ManutencoesPage({ searchParams }: { searchParams: 
                 </p>
               </div>
               <div className="flex items-center justify-between gap-2 sm:justify-end">
-                <span className="text-lg font-bold">{formatBRL(Number(m.custo))}</span>
+                {m.situacao === 'aberta' ? (
+                  <Link href={`/manutencoes/${m.id}/concluir`} className={buttonVariants({ size: 'sm' })}>
+                    <Wrench /> Concluir
+                  </Link>
+                ) : (
+                  <span className="text-lg font-bold">{formatBRL(Number(m.custo))}</span>
+                )}
                 {isAdmin ? (
                   <DeleteButton action={excluirManutencao} id={m.id} confirmMessage="Excluir este lançamento de manutenção?" />
                 ) : null}

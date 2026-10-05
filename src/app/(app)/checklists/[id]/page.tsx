@@ -9,6 +9,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { DeleteButton } from '@/components/ui/delete-button';
 import { PageHeader } from '@/components/ui/page-header';
 import { ChecklistStatusBadge, ChecklistTipoBadge } from '@/components/ui/status-badges';
+import { AvisoBloqueio } from '@/components/veiculos/aviso-bloqueio';
 import { requireSession } from '@/lib/auth';
 import { agruparItens, tipoLabel, type ItemChecklist } from '@/lib/checklist/etapas';
 import { carregarModelos } from '@/lib/checklist/modelos';
@@ -34,6 +35,16 @@ export default async function ChecklistPage({ params }: { params: Promise<{ id: 
     carregarModelos(supabase),
   ]);
   if (!checklist) notFound();
+
+  // avaria crítica: o veículo fica não liberado (bloqueio aberto por este ou outro checklist)
+  const { data: situacao } =
+    checklist.status === 'critico'
+      ? await supabase
+          .from('vw_veiculos_painel')
+          .select('bloqueio_id, bloqueio_motivo, bloqueado_em, bloqueio_checklist_id, bloqueio_manutencao_id')
+          .eq('id', checklist.veiculo_id)
+          .maybeSingle()
+      : { data: null };
 
   const fotos = checklist.checklist_fotos ?? [];
   const urls = await signedUrlMap(supabase, 'checklists', fotos.map((f) => f.foto_url));
@@ -74,6 +85,19 @@ export default async function ChecklistPage({ params }: { params: Promise<{ id: 
           </>
         }
       />
+
+      {situacao?.bloqueio_id ? (
+        <AvisoBloqueio
+          veiculoId={checklist.veiculo_id}
+          gestao={!isMotorista}
+          bloqueio={{
+            motivo: situacao.bloqueio_motivo,
+            bloqueadoEm: situacao.bloqueado_em,
+            checklistId: situacao.bloqueio_checklist_id === checklist.id ? null : situacao.bloqueio_checklist_id,
+            manutencaoId: situacao.bloqueio_manutencao_id,
+          }}
+        />
+      ) : null}
 
       <Card>
         <CardContent className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">

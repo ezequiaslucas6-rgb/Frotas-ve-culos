@@ -10,7 +10,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DeleteButton } from '@/components/ui/delete-button';
 import { EmptyState, PageHeader } from '@/components/ui/page-header';
 import { AlertaBadge, ChecklistStatusBadge, SaudeBadge } from '@/components/ui/status-badges';
-import { calcularConsumo, formatKmL } from '@/lib/abastecimento/consumo';
+import { AvisoBloqueio } from '@/components/veiculos/aviso-bloqueio';
+import { calcularConsumo, descreverAnomalia, detectarConsumoAnormal, dicaAnomalia, formatKmL } from '@/lib/abastecimento/consumo';
 import { requireSession } from '@/lib/auth';
 import { tipoLabel } from '@/lib/checklist/etapas';
 import { formatBRL, formatDateISO, formatDateTime, formatFilial, formatKm } from '@/lib/format';
@@ -26,7 +27,7 @@ export default async function VeiculoPage({ params }: { params: Promise<{ id: st
   const { supabase, isAdmin } = await requireSession();
 
   // tudo em paralelo (só depende do id); as URLs das imagens saem numa segunda leva, também em paralelo
-  const [{ data: raw }, { data: checklists }, { data: manutencoes }, { data: abastecimentos }] = await Promise.all([
+  const [{ data: raw }, { data: checklists }, { data: manutencoes }, { data: abastecimentos }, { data: abertas }] = await Promise.all([
     supabase.from('vw_veiculos_painel').select('*').eq('id', id).maybeSingle(),
     supabase
       .from('checklists')
@@ -36,7 +37,7 @@ export default async function VeiculoPage({ params }: { params: Promise<{ id: st
       .limit(8),
     supabase
       .from('manutencoes')
-      .select('id, tipo, descricao, custo, km_registro, data_manutencao')
+      .select('id, tipo, descricao, custo, km_registro, data_manutencao, situacao')
       .eq('veiculo_id', id)
       .order('data_manutencao', { ascending: false })
       .limit(8),
@@ -46,10 +47,14 @@ export default async function VeiculoPage({ params }: { params: Promise<{ id: st
       .eq('veiculo_id', id)
       .order('km', { ascending: false })
       .limit(30),
+    // conserto pendente: a manutenção aberta mais antiga (normalmente a da avaria do checklist)
+    supabase.from('manutencoes').select('id').eq('veiculo_id', id).eq('situacao', 'aberta').order('created_at').limit(1),
   ]);
   if (!raw) notFound();
   const v = { ...raw, ...avaliarVeiculoPainel(raw) };
+  const consertoPendente = abertas?.[0]?.id ?? null;
   const consumo = calcularConsumo(abastecimentos ?? []);
+  const anomalias = detectarConsumoAnormal(abastecimentos ?? []);
   const [urls, urlsCupom] = await Promise.all([
     signedUrlMap(supabase, 'veiculos', [raw.foto_geral_url, raw.documento_url]),
     signedUrlMap(supabase, 'abastecimentos', (abastecimentos ?? []).slice(0, 6).map((a) => a.comprovante_url)),
@@ -86,6 +91,17 @@ export default async function VeiculoPage({ params }: { params: Promise<{ id: st
         }
       />
 
+      <AvisoBloqueio
+        veiculoId={v.id}
+        gestao
+        bloqueio={
+          v.bloqueio_id
+            ? { motivo: v.bloqueio_motivo, bloqueadoEm: v.bloqueado_em, checklistId: v.bloqueio_checklist_id, manutencaoId: v.bloqueio_manutencao_id }
+            : null
+        }
+        consertoPendenteId={consertoPendente}
+      />
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         <Card className="overflow-hidden py-0">
           <div className="flex aspect-[4/3] items-center justify-center bg-muted text-muted-foreground">
@@ -111,7 +127,7 @@ export default async function VeiculoPage({ params }: { params: Promise<{ id: st
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <div className="flex flex-wrap items-center gap-2">
-              <SaudeBadge saude={v.saude} />
+              <SaudeBadge saude={v.saude} naoLiberado={v.naoLiberado} />
               <AlertaBadge nivel={v.alerta.nivel} />
             </div>
             {v.motivos.length > 0 ? (
@@ -162,6 +178,12 @@ export default async function VeiculoPage({ params }: { params: Promise<{ id: st
                 <dd className="font-semibold">{formatKmL(consumo.media)}</dd>
               </div>
             </dl>
+            {anomalias.ultima ? (
+              <p role="status" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive-text">
+                <strong>Consumo fora do padrão:</strong> {formatKmL(anomalias.ultima.kml)} no último tanque, {descreverAnomalia(anomalias.ultima)} (
+                {formatKmL(anomalias.ultima.referencia)}). {dicaAnomalia(anomalias.ultima)}
+              </p>
+            ) : null}
           </CardContent>
         </Card>
       </div>
@@ -220,7 +242,13 @@ export default async function VeiculoPage({ params }: { params: Promise<{ id: st
                       <Badge variant={m.tipo === 'preventiva' ? 'secondary' : 'warning'}>
                         {m.tipo === 'preventiva' ? 'Preventiva' : 'Corretiva'}
                       </Badge>
-                      <span className="text-xs font-medium">{formatBRL(Number(m.custo))}</span>
+                      {m.situacao === 'aberta' ? (
+                        <Link href={`/manutencoes/${m.id}/concluir`} className="text-xs font-semibold text-primary hover:underline">
+                          Aberta · concluir
+                        </Link>
+                      ) : (
+                        <span className="text-xs font-medium">{formatBRL(Number(m.custo))}</span>
+                      )}
                     </div>
                   </li>
                 ))}
@@ -249,6 +277,7 @@ export default async function VeiculoPage({ params }: { params: Promise<{ id: st
             <ListaAbastecimentos
               itens={(abastecimentos ?? []).slice(0, 6)}
               consumo={consumo.porLancamento}
+              anomalias={anomalias.porLancamento}
               urls={urlsCupom}
               mostrarMotorista
             />
