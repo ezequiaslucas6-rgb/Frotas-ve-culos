@@ -6,6 +6,7 @@ on:
   push:
     paths:
       - 'android/**'
+      - 'deploy/gerar-chave-apk.sh'
       - '.github/workflows/android.yml'
   workflow_dispatch:
     inputs:
@@ -36,17 +37,29 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # Opcional: com a chave nos secrets, cada APK novo instala POR CIMA do anterior.
+      # Com a chave fixa nos secrets (deploy/gerar-chave-apk.sh), cada APK novo instala POR CIMA
+      # do anterior. Sem ela, o mesmo script gera uma chave descartável só para este build
+      # (instala normalmente, mas para atualizar é preciso desinstalar antes).
       - name: Chave de assinatura
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/frotas.jks"
-            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/frotas.jks" >> "$GITHUB_ENV"
-            echo "Assinando com a chave dos secrets."
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/chave-fixa.p12"
+            {
+              echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/chave-fixa.p12"
+              echo "ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+              echo "ANDROID_KEY_ALIAS=$KEY_ALIAS"
+              echo "ANDROID_KEY_PASSWORD=$KEY_PASSWORD"
+              echo "CHAVE_FIXA=1"
+            } >> "$GITHUB_ENV"
+            echo "Assinando com a chave fixa (secrets)."
           else
-            echo "::notice::Sem o secret ANDROID_KEYSTORE_BASE64: APK assinado com chave de depuração (para atualizar o app, desinstale a versão anterior). Veja o README."
+            echo "::notice::Sem os secrets da chave fixa: APK assinado com uma chave descartável (para atualizar, desinstale a versão anterior). Rode deploy/gerar-chave-apk.sh e veja o README."
+            PASTA="$RUNNER_TEMP/chave-descartavel" bash ../deploy/gerar-chave-apk.sh --ci
           fi
 
       - name: Compilar APK
@@ -54,13 +67,22 @@ jobs:
           APP_URL: ${{ inputs.app_url || 'https://frotas.209.50.240.59.sslip.io/' }}
           VERSION_CODE: ${{ github.run_number }}
           VERSION_NAME: 1.0.${{ github.run_number }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           ./gradlew assembleRelease -PappUrl="$APP_URL" --no-daemon --stacktrace
           cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/frotas.apk"
           ls -la "$RUNNER_TEMP/frotas.apk"
+
+      # Mostra com qual chave o APK saiu (compare com a impressão digital do gerar-chave-apk.sh)
+      - name: Conferir assinatura
+        run: |
+          BT="$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          "$ANDROID_HOME/build-tools/$BT/apksigner" verify --print-certs "$RUNNER_TEMP/frotas.apk" | tee "$RUNNER_TEMP/certs.txt"
+          SHA="$(grep -m1 'certificate SHA-256 digest' "$RUNNER_TEMP/certs.txt" | sed 's/.*: //' | tr 'a-f' 'A-F' | sed 's/../&:/g; s/:$//')"
+          if [ -n "${CHAVE_FIXA:-}" ]; then
+            echo "::notice::APK assinado com a chave fixa (SHA-256 $SHA): instala por cima da versão anterior."
+          else
+            echo "::notice::APK assinado com chave descartável (SHA-256 $SHA)."
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
@@ -75,5 +97,5 @@ jobs:
           gh release delete app-android --yes --cleanup-tag || true
           gh release create app-android "$RUNNER_TEMP/frotas.apk" \
             --target "$GITHUB_SHA" \
-            --title "App Android — versão 1.0.${{ github.run_number }}" \
+            --title "Rodar (Android) — versão 1.0.${{ github.run_number }}" \
             --notes "Instale no celular: baixe o frotas.apk, toque nele e permita instalar de fontes desconhecidas. O app abre o sistema em $APP_URL."

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Frotas</string>
+    <string name="app_name">Rodar</string>
     <string name="erro_titulo">Sem conexão com o sistema</string>
     <string name="erro_texto">Verifique a internet do celular e tente de novo.</string>
     <string name="erro_botao">Tentar novamente</string>

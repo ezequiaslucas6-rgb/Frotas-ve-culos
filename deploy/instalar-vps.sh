@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Gestão de Frotas — instalação / atualização na VPS (Debian / Ubuntu)
+# Rodar (Gestão de Frotas) — instalação / atualização na VPS (Debian / Ubuntu)
 #
 # Na VPS, logado com seu usuário (precisa de sudo):
 #   curl -fsSL https://raw.githubusercontent.com/ezequiaslucas6-rgb/Frotas-ve-culos/claude/amazing-ptolemy-j5zi8z/deploy/instalar-vps.sh -o instalar-vps.sh

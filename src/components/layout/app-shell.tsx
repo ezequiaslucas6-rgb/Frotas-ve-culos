@@ -3,8 +3,9 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
-import { LogOut, Menu, Truck, UserRound, X } from 'lucide-react';
+import { LogOut, Menu, UserRound, X } from 'lucide-react';
 import { signOut } from '@/actions/auth';
+import { Volante } from '@/components/marca/volante';
 import { AreaConteudo, NavegacaoProvider } from '@/components/navegacao';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Avatar } from '@/components/ui/avatar';
@@ -26,10 +27,11 @@ interface AppShellProps {
 const isActive = (pathname: string, href: string, acaoHref: string) =>
   !pathname.startsWith(acaoHref) && (pathname === href || pathname.startsWith(`${href}/`));
 
+/** Marca Rodar: volante no quadrado arredondado. */
 function Logo({ className }: { className?: string }) {
   return (
     <span className={cn('flex size-10 items-center justify-center rounded-xl bg-white/95 text-icone', className)}>
-      <Truck className="size-5" strokeWidth={2.4} />
+      <Volante className="size-[70%]" titulo="Rodar" />
     </span>
   );
 }

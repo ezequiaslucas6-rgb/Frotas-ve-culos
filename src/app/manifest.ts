@@ -2,8 +2,8 @@ import type { MetadataRoute } from 'next';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'Gestão de Frotas',
-    short_name: 'Frotas',
+    name: 'Rodar · Gestão de Frotas',
+    short_name: 'Rodar',
     description: 'Checklists fotográficos, manutenção e controle de frota por filial.',
     start_url: '/',
     scope: '/',

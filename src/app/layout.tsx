@@ -4,10 +4,10 @@ import { ThemeProvider } from '@/components/theme-provider';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: { default: 'Gestão de Frotas', template: '%s · Gestão de Frotas' },
+  title: { default: 'Rodar · Gestão de Frotas', template: '%s · Rodar' },
   description: 'Checklists fotográficos, manutenção e controle de frota por filial.',
-  applicationName: 'Gestão de Frotas',
-  appleWebApp: { capable: true, title: 'Frotas', statusBarStyle: 'default' },
+  applicationName: 'Rodar',
+  appleWebApp: { capable: true, title: 'Rodar', statusBarStyle: 'default' },
   formatDetection: { telephone: false },
   icons: { icon: '/icons/icon.svg', apple: '/icons/apple-touch-icon.png' },
 };

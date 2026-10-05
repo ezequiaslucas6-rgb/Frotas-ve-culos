@@ -1,4 +1,4 @@
-# Gestão de Frotas
+# Rodar — Gestão de Frotas
 
 Sistema multi-filial de gestão de frotas: **checklist fotográfico diário, semanal e mensal** (celular, só câmera), cadastro de motoristas (com
 **CNH completa e imagens**) e veículos, **acesso do motorista pelo celular** com **lançamento de abastecimentos**,
@@ -76,14 +76,18 @@ mantém o login entre aberturas. Como ele carrega o site da VPS, **toda atualiza
 link, baixe, toque no arquivo e permita *instalar apps desta fonte*. Para gerar de novo (ex.: outro endereço), use
 *Actions → App Android (APK) → Run workflow* (o botão aparece quando o workflow está na branch principal).
 
-**Atualizar o APK por cima (opcional):** sem configuração, cada APK sai com uma chave de assinatura nova e, para trocar de
-versão, é preciso desinstalar a anterior. Para atualizações por cima, crie uma chave **uma vez** e guarde-a com cuidado:
+**Atualizar o APK por cima (chave fixa):** sem configuração, cada APK sai com uma chave de assinatura diferente e, para
+trocar de versão, é preciso desinstalar a anterior. Para que as versões novas instalem **por cima**, crie a chave fixa
+**uma vez** na VPS:
 ```bash
-keytool -genkeypair -v -keystore frotas.jks -alias frotas -keyalg RSA -keysize 2048 -validity 10000
-base64 -w0 frotas.jks   # copie a saída
+bash /opt/frotas/deploy/gerar-chave-apk.sh            # cria ~/rodar-chave-apk e mostra os 4 valores
+bash /opt/frotas/deploy/gerar-chave-apk.sh --mostrar  # mostra os valores de novo
 ```
-e cadastre em *Settings → Secrets and variables → Actions*: `ANDROID_KEYSTORE_BASE64` (a saída acima),
-`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`frotas`) e `ANDROID_KEY_PASSWORD`. Nunca coloque o `.jks` no repositório.
+Cadastre os 4 valores em *Settings → Secrets and variables → Actions → New repository secret*
+(`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`) e gere o APK de novo
+(*Actions → App Android (APK) → Run workflow*). O log do passo *Conferir assinatura* mostra a impressão digital da chave
+usada. Nos celulares, desinstale o app antigo **uma última vez**; daí em diante, cada versão instala por cima.
+Guarde uma cópia de `~/rodar-chave-apk` fora da VPS e **nunca** coloque a chave no repositório (ele é público).
 
 ## 4. Desenvolvimento
 ```bash

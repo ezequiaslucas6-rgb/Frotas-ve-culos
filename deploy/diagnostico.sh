@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Gestão de Frotas — diagnóstico da instalação na VPS (não altera nada).
+# Rodar (Gestão de Frotas) — diagnóstico da instalação na VPS (não altera nada).
 #   curl -fsSL https://raw.githubusercontent.com/ezequiaslucas6-rgb/Frotas-ve-culos/claude/amazing-ptolemy-j5zi8z/deploy/diagnostico.sh -o diagnostico.sh
 #   bash diagnostico.sh
 # Gera /tmp/frotas-diagnostico.txt. As chaves do .env NÃO são exibidas (só se estão preenchidas).
