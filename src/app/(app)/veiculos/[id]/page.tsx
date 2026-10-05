@@ -12,6 +12,7 @@ import { EmptyState, PageHeader } from '@/components/ui/page-header';
 import { AlertaBadge, ChecklistStatusBadge, SaudeBadge } from '@/components/ui/status-badges';
 import { calcularConsumo, formatKmL } from '@/lib/abastecimento/consumo';
 import { requireSession } from '@/lib/auth';
+import { tipoLabel } from '@/lib/checklist/etapas';
 import { formatBRL, formatDateISO, formatDateTime, formatFilial, formatKm } from '@/lib/format';
 import { avaliarVeiculoPainel } from '@/lib/maintenance/alerts';
 import { descreverAlerta } from '@/lib/maintenance/describe';
@@ -29,7 +30,7 @@ export default async function VeiculoPage({ params }: { params: Promise<{ id: st
     supabase.from('vw_veiculos_painel').select('*').eq('id', id).maybeSingle(),
     supabase
       .from('checklists')
-      .select('id, data_envio, status, km_registro, motoristas(nome)')
+      .select('id, data_envio, tipo, status, km_registro, motoristas(nome)')
       .eq('veiculo_id', id)
       .order('data_envio', { ascending: false })
       .limit(8),
@@ -183,7 +184,7 @@ export default async function VeiculoPage({ params }: { params: Promise<{ id: st
                     <Link href={`/checklists/${c.id}`} className="min-w-0 hover:underline">
                       <span className="font-medium">{formatDateTime(c.data_envio)}</span>
                       <span className="block truncate text-xs text-muted-foreground">
-                        {c.motoristas?.nome ?? '—'}
+                        {tipoLabel(c.tipo)} · {c.motoristas?.nome ?? '—'}
                         {c.km_registro != null ? ` · ${formatKm(c.km_registro)}` : ''}
                       </span>
                     </Link>

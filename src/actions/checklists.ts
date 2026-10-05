@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { fail, ok, type ActionState } from '@/lib/action-state';
 import { requireAdmin, requireSession } from '@/lib/auth';
 import { friendlyDbError } from '@/lib/db-errors';
-import { CHECKLIST_ETAPAS, calcularStatusChecklist, caminhoFotoChecklist, type CategoriaFoto } from '@/lib/checklist/etapas';
+import { TIPOS_CHECKLIST, calcularStatusChecklist, caminhoFotoChecklist, fotosEsperadas, tipoLabel, type ItemChecklist } from '@/lib/checklist/etapas';
 import { sincronizarAlertas } from '@/lib/maintenance/sync';
 import { checklistSchema } from '@/lib/schemas';
 import type { Json } from '@/types/database';
@@ -14,14 +14,15 @@ export type SalvarChecklistResult =
   | { ok: false; message: string };
 
 /**
- * Salva o checklist de 14 etapas (as fotos já foram enviadas direto ao Storage pelo
- * browser; aqui chegam só os metadados).
+ * Salva o checklist (as fotos já foram enviadas direto ao Storage pelo browser; aqui chegam
+ * só os metadados). Os itens exigidos vêm do modelo do tipo (diário/semanal/mensal):
  *
- *  1. valida o payload (zod) e que as 14 categorias vieram exatamente uma vez
+ *  1. valida o payload (zod) e confere as fotos com o modelo: todos os itens comuns, mais
+ *     a foto de vazamento/avaria quando a resposta foi "Sim" (uma foto por item)
  *  2. confere veículo/motorista com a sessão do usuário (RLS) e a mesma filial
- *  3. garante que cada foto está no caminho esperado <filial>/<checklist>/<categoria>.jpg
+ *  3. garante que cada foto está no caminho esperado <filial>/<checklist>/<item>.jpg
  *     e que o arquivo existe no Storage
- *  4. chama a RPC atômica salvar_checklist (checklist + fotos + KM do veículo)
+ *  4. chama a RPC atômica salvar_checklist (que repete a validação do modelo)
  *  5. recalcula os alertas de manutenção do veículo (KM novo pode vencer a revisão)
  */
 export async function salvarChecklist(input: unknown): Promise<SalvarChecklistResult> {
@@ -33,13 +34,35 @@ export async function salvarChecklist(input: unknown): Promise<SalvarChecklistRe
   }
   const c = parsed.data;
 
-  const categorias = new Set(c.itens.map((i) => i.categoria));
-  if (categorias.size !== CHECKLIST_ETAPAS.length) {
-    return { ok: false, message: 'Cada etapa do checklist deve ter exatamente uma foto.' };
+  const { data: modelo, error: modeloError } = await supabase
+    .from('checklist_modelo')
+    .select('checklist_itens(codigo, nome, grupo, instrucao, pergunta, ordem, condicional, ativo)')
+    .eq('tipo', c.tipo);
+  if (modeloError) return { ok: false, message: friendlyDbError(modeloError) };
+  const itensModelo = (modelo ?? [])
+    .map((m) => m.checklist_itens)
+    .filter((i): i is ItemChecklist & { ativo: boolean } => Boolean(i?.ativo));
+  if (itensModelo.length === 0) {
+    return { ok: false, message: `O checklist ${tipoLabel(c.tipo).toLowerCase()} não tem fotos configuradas.` };
+  }
+
+  const semResposta = itensModelo.find((i) => i.condicional && typeof c.respostas[i.codigo] !== 'boolean');
+  if (semResposta) return { ok: false, message: `Responda a pergunta "${semResposta.pergunta ?? semResposta.nome}" (Sim ou Não).` };
+
+  const esperados = fotosEsperadas(itensModelo, c.respostas);
+  const enviadas = new Set(c.itens.map((i) => i.categoria));
+  const faltandoItem = itensModelo.find((i) => esperados.includes(i.codigo) && !enviadas.has(i.codigo));
+  if (faltandoItem) return { ok: false, message: `Falta a foto "${faltandoItem.nome}". Volte e fotografe o item.` };
+  if (enviadas.size !== c.itens.length || c.itens.some((i) => !esperados.includes(i.categoria))) {
+    return { ok: false, message: 'Cada item do checklist deve ter exatamente uma foto. Atualize a página e tente de novo.' };
   }
   const semObservacao = c.itens.find((i) => i.severidade !== 'ok' && !i.observacao);
   if (semObservacao) {
     return { ok: false, message: 'Descreva a inconformidade nos itens marcados como Atenção ou Avaria.' };
+  }
+  const condicionais = new Set(itensModelo.filter((i) => i.condicional).map((i) => i.codigo));
+  if (c.itens.some((i) => condicionais.has(i.categoria) && i.severidade === 'ok')) {
+    return { ok: false, message: 'Classifique o vazamento ou a avaria como Atenção ou Avaria.' };
   }
 
   const [{ data: veiculo }, { data: motorista }] = await Promise.all([
@@ -60,8 +83,8 @@ export async function salvarChecklist(input: unknown): Promise<SalvarChecklistRe
 
   // 3. caminhos esperados + existência no Storage
   for (const item of c.itens) {
-    if (item.fotoPath !== caminhoFotoChecklist(veiculo.filial_id, c.checklistId, item.categoria as CategoriaFoto)) {
-      return { ok: false, message: 'Caminho de foto inválido. Refaça a captura da etapa.' };
+    if (item.fotoPath !== caminhoFotoChecklist(veiculo.filial_id, c.checklistId, item.categoria)) {
+      return { ok: false, message: 'Caminho de foto inválido. Refaça a captura do item.' };
     }
   }
   const { data: arquivos, error: listError } = await supabase.storage
@@ -71,8 +94,8 @@ export async function salvarChecklist(input: unknown): Promise<SalvarChecklistRe
   const enviados = new Set((arquivos ?? []).map((f) => f.name));
   const faltando = c.itens.find((i) => !enviados.has(`${i.categoria}.jpg`));
   if (faltando) {
-    const titulo = CHECKLIST_ETAPAS.find((e) => e.categoria === faltando.categoria)?.titulo ?? faltando.categoria;
-    return { ok: false, message: `A foto da etapa "${titulo}" não foi encontrada. Refaça a captura.` };
+    const nome = itensModelo.find((i) => i.codigo === faltando.categoria)?.nome ?? faltando.categoria;
+    return { ok: false, message: `A foto "${nome}" não foi encontrada. Refaça a captura.` };
   }
 
   const fotos: Json = c.itens.map((i) => ({
@@ -85,11 +108,14 @@ export async function salvarChecklist(input: unknown): Promise<SalvarChecklistRe
 
   const { error } = await supabase.rpc('salvar_checklist', {
     p_id: c.checklistId,
+    p_tipo: c.tipo,
     p_veiculo_id: c.veiculoId,
     p_motorista_id: c.motoristaId,
     p_observacoes: c.observacoesGerais ?? null,
     p_km: c.kmAtual,
     p_fotos: fotos,
+    // só as perguntas do modelo (chaves extras seriam ignoradas pela RPC de qualquer forma)
+    p_respostas: Object.fromEntries([...condicionais].map((codigo) => [codigo, c.respostas[codigo] === true])),
   });
   if (error) {
     // checklist reenviado (duplo toque / retry de rede): a PK já existe => trata como sucesso idempotente
@@ -124,4 +150,32 @@ export async function excluirChecklist(_prev: ActionState, formData: FormData): 
   revalidatePath('/checklists');
   revalidatePath('/dashboard');
   return ok('Checklist excluído.');
+}
+
+/**
+ * Modelos (somente admin): quais itens cada tipo de checklist exige.
+ * O formulário envia, para cada tipo, os códigos marcados (name="diario", "semanal", "mensal").
+ */
+export async function salvarModelosChecklist(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const { supabase } = await requireAdmin();
+
+  const { data: catalogo, error: catalogoError } = await supabase.from('checklist_itens').select('codigo, condicional').eq('ativo', true);
+  if (catalogoError) return fail(friendlyDbError(catalogoError));
+  const condicional = new Map((catalogo ?? []).map((i) => [i.codigo, i.condicional]));
+
+  const modelos = TIPOS_CHECKLIST.map((t) => ({
+    ...t,
+    itens: [...new Set(formData.getAll(t.value).map(String))].filter((codigo) => condicional.has(codigo)),
+  }));
+  const vazio = modelos.find((m) => !m.itens.some((codigo) => condicional.get(codigo) === false));
+  if (vazio) return fail(`O checklist ${vazio.label.toLowerCase()} precisa de ao menos uma foto obrigatória.`);
+
+  for (const m of modelos) {
+    const { error } = await supabase.rpc('definir_modelo_checklist', { p_tipo: m.value, p_itens: m.itens });
+    if (error) return fail(friendlyDbError(error));
+  }
+
+  revalidatePath('/checklists/modelos');
+  revalidatePath('/checklists/novo');
+  return ok('Modelos de checklist salvos.');
 }

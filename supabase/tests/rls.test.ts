@@ -20,11 +20,13 @@ const V_RJ = '20000000-0000-4000-8000-000000000002';
 const M_SP = '30000000-0000-4000-8000-000000000001';
 const M_RJ = '30000000-0000-4000-8000-000000000002';
 
-const CATEGORIAS = [
-  'lateral_direita', 'lateral_esquerda', 'frente', 'traseira', 'carroceria_portamalas',
-  'interior', 'painel', 'rodas', 'nivel_oleo', 'nivel_agua', 'motor', 'retrovisores',
-  'para_brisa', 'luzes_sinalizacao',
+// Modelo padrão do checklist DIÁRIO (migration 20260105): 15 fotos + a pergunta de vazamento/avaria
+const DIARIO = [
+  'frente', 'traseira', 'lateral_esquerda', 'lateral_direita',
+  'pneu_dianteiro_esquerdo', 'pneu_dianteiro_direito', 'pneu_traseiro_esquerdo', 'pneu_traseiro_direito',
+  'retrovisor_esquerdo', 'retrovisor_direito', 'nivel_oleo', 'fluido_freio', 'nivel_agua', 'painel', 'bancos',
 ] as const;
+const SEMANAL_EXTRA = ['luzes_sinalizacao', 'para_brisa', 'estepe', 'carroceria_portamalas'] as const;
 
 type FotoPayload = {
   categoria_foto: string;
@@ -34,14 +36,23 @@ type FotoPayload = {
   marcadores: unknown[];
 };
 
-const fotos = (filial: string, checklistId: string, severidades: Record<string, string> = {}): FotoPayload[] =>
-  CATEGORIAS.map((categoria) => ({
+const fotos = (
+  filial: string,
+  checklistId: string,
+  severidades: Record<string, string> = {},
+  itens: readonly string[] = DIARIO,
+): FotoPayload[] =>
+  itens.map((categoria) => ({
     categoria_foto: categoria,
     foto_url: `${filial}/${checklistId}/${categoria}.jpg`,
     severidade: severidades[categoria] ?? 'ok',
     observacao: severidades[categoria] ? 'detalhe' : null,
     marcadores: [],
   }));
+
+const SALVAR = `select public.salvar_checklist($1, $2::public.checklist_tipo, $3, $4, $5, $6, $7::jsonb, $8::jsonb)`;
+const salvar = (id: string, tipo: string, veiculo: string, motorista: string, km: number | null, fotosPayload: unknown, respostas: unknown = { vazamento_avaria: false }, obs: string | null = null) =>
+  db.query(SALVAR, [id, tipo, veiculo, motorista, obs, km, JSON.stringify(fotosPayload), JSON.stringify(respostas)]);
 
 let db: PGlite;
 let as: Awaited<ReturnType<typeof criarBanco>>['as'];
@@ -183,63 +194,75 @@ describe('supervisor: isolamento por filial', () => {
   });
 });
 
-describe('salvar_checklist (RPC atômica)', () => {
+describe('salvar_checklist (RPC atômica, validada pelo modelo do tipo)', () => {
   const CK = '40000000-0000-4000-8000-000000000001';
 
   it('rejeita veículo de outra filial', async () => {
     await as(SUP_SP, async () => {
-      await expect(
-        db.query(`select public.salvar_checklist($1, $2, $3, null, 100, $4::jsonb)`,
-          [CK, V_RJ, M_SP, JSON.stringify(fotos(F_RJ, CK))]),
-      ).rejects.toThrow(/sem permissão/);
+      await expect(salvar(CK, 'diario', V_RJ, M_SP, 100, fotos(F_RJ, CK))).rejects.toThrow(/sem permissão/);
     });
   });
 
-  it('rejeita checklist com menos de 14 fotos e não deixa lixo no banco', async () => {
+  it('exige todas as fotos do modelo (diário: 15) e não deixa lixo no banco', async () => {
     await as(SUP_SP, async () => {
+      await expect(salvar(CK, 'diario', V_SP, M_SP, 100, fotos(F_SP, CK).slice(0, 14))).rejects.toThrow(/diário exige 15 foto/);
+      // foto de item que não é do modelo diário
       await expect(
-        db.query(`select public.salvar_checklist($1, $2, $3, null, 100, $4::jsonb)`,
-          [CK, V_SP, M_SP, JSON.stringify(fotos(F_SP, CK).slice(0, 13))]),
-      ).rejects.toThrow(/14 fotos/);
+        salvar(CK, 'diario', V_SP, M_SP, 100, [...fotos(F_SP, CK).slice(0, 14), ...fotos(F_SP, CK, {}, ['estepe'])]),
+      ).rejects.toThrow(/exige 15 foto/);
     });
     expect(await rows('select id from public.checklists')).toHaveLength(0);
   });
 
-  it('rejeita categorias repetidas', async () => {
+  it('rejeita itens repetidos', async () => {
     const dup = fotos(F_SP, CK);
-    dup[13] = { ...dup[0]! };
+    dup[14] = { ...dup[0]! };
     await as(SUP_SP, async () => {
-      await expect(
-        db.query(`select public.salvar_checklist($1, $2, $3, null, 100, $4::jsonb)`,
-          [CK, V_SP, M_SP, JSON.stringify(dup)]),
-      ).rejects.toThrow(/14 fotos/);
+      await expect(salvar(CK, 'diario', V_SP, M_SP, 100, dup)).rejects.toThrow(/exige 15 foto/);
     });
   });
 
-  it('salva checklist + 14 fotos, deriva o status pela pior severidade e atualiza o KM', async () => {
+  it('a pergunta de vazamento/avaria é obrigatória; "Sim" exige a foto e "Não" não aceita foto', async () => {
+    const avaria = fotos(F_SP, CK, { vazamento_avaria: 'atencao' }, ['vazamento_avaria']);
     await as(SUP_SP, async () => {
-      await db.query(
-        `select public.salvar_checklist($1, $2, $3, '  Tudo certo  ', 1500, $4::jsonb)`,
-        [CK, V_SP, M_SP, JSON.stringify(fotos(F_SP, CK, { rodas: 'atencao', motor: 'critico' }))],
+      await expect(salvar(CK, 'diario', V_SP, M_SP, 100, fotos(F_SP, CK), {})).rejects.toThrow(/vazamento ou avaria\?.*Sim ou Não/);
+      await expect(salvar(CK, 'diario', V_SP, M_SP, 100, fotos(F_SP, CK), { vazamento_avaria: true })).rejects.toThrow(/exige 16 foto/);
+      await expect(salvar(CK, 'diario', V_SP, M_SP, 100, [...fotos(F_SP, CK), ...avaria], { vazamento_avaria: false })).rejects.toThrow(
+        /exige 15 foto/,
       );
-      const [ck] = await rows<{ status: string; observacoes_gerais: string; supervisor_id: string; filial_id: string }>(
-        'select status, observacoes_gerais, supervisor_id, filial_id from public.checklists where id = $1', [CK]);
-      expect(ck).toEqual({ status: 'critico', observacoes_gerais: 'Tudo certo', supervisor_id: SUP_SP, filial_id: F_SP });
-      expect(await rows('select 1 from public.checklist_fotos where checklist_id = $1', [CK])).toHaveLength(14);
+      // avaria declarada não pode ficar "conforme"
+      await expect(
+        salvar(CK, 'diario', V_SP, M_SP, 100, [...fotos(F_SP, CK), ...fotos(F_SP, CK, {}, ['vazamento_avaria'])], { vazamento_avaria: true }),
+      ).rejects.toThrow(/Atenção ou Avaria/);
+    });
+  });
+
+  it('salva o diário, deriva o status pela pior severidade, guarda tipo e respostas e atualiza o KM', async () => {
+    await as(SUP_SP, async () => {
+      await salvar(CK, 'diario', V_SP, M_SP, 1500, fotos(F_SP, CK, { pneu_traseiro_direito: 'atencao', fluido_freio: 'critico' }), { vazamento_avaria: false }, '  Tudo certo  ');
+      const [ck] = await rows<Record<string, unknown>>(
+        'select tipo, status, observacoes_gerais, supervisor_id, filial_id, respostas from public.checklists where id = $1', [CK]);
+      expect(ck).toEqual({
+        tipo: 'diario', status: 'critico', observacoes_gerais: 'Tudo certo', supervisor_id: SUP_SP, filial_id: F_SP,
+        respostas: { vazamento_avaria: false },
+      });
+      expect(await rows('select 1 from public.checklist_fotos where checklist_id = $1', [CK])).toHaveLength(15);
       const [v] = await rows<{ km_atual: number }>('select km_atual from public.veiculos where id = $1', [V_SP]);
       expect(v?.km_atual).toBe(1500);
-
       const [painel] = await rows<{ ultimo_checklist_status: string }>(
         'select ultimo_checklist_status from public.vw_veiculos_painel where id = $1', [V_SP]);
       expect(painel?.ultimo_checklist_status).toBe('critico');
     });
   });
 
-  it('o KM nunca regride', async () => {
+  it('semanal com avaria declarada: 19 fotos + a foto da avaria; o KM nunca regride', async () => {
     const CK2 = '40000000-0000-4000-8000-000000000002';
+    const itens = [...DIARIO, ...SEMANAL_EXTRA, 'vazamento_avaria'];
     await as(SUP_SP, async () => {
-      await db.query(`select public.salvar_checklist($1, $2, $3, null, 900, $4::jsonb)`,
-        [CK2, V_SP, M_SP, JSON.stringify(fotos(F_SP, CK2))]);
+      await expect(salvar(CK2, 'semanal', V_SP, M_SP, 900, fotos(F_SP, CK2), { vazamento_avaria: false })).rejects.toThrow(/semanal exige 19/);
+      await salvar(CK2, 'semanal', V_SP, M_SP, 900, fotos(F_SP, CK2, { vazamento_avaria: 'atencao' }, itens), { vazamento_avaria: true });
+      expect(await rows('select tipo, status from public.checklists where id = $1', [CK2])).toEqual([{ tipo: 'semanal', status: 'atencao' }]);
+      expect(await rows('select 1 from public.checklist_fotos where checklist_id = $1', [CK2])).toHaveLength(20);
       const [v] = await rows<{ km_atual: number }>('select km_atual from public.veiculos where id = $1', [V_SP]);
       expect(v?.km_atual).toBe(1500);
     });
@@ -259,6 +282,39 @@ describe('salvar_checklist (RPC atômica)', () => {
     await as(SUP_SP, async () => {
       expect((await db.query(`update public.checklists set status = 'ok' where id = $1`, [CK])).affectedRows).toBe(0);
       expect((await db.query(`delete from public.checklist_fotos where checklist_id = $1`, [CK])).affectedRows).toBe(0);
+    });
+  });
+});
+
+describe('modelos de checklist', () => {
+  it('todos os logados leem o catálogo e os modelos; anon não', async () => {
+    await as(SUP_SP, async () => {
+      const grupos = await rows<{ grupo: string }>('select distinct grupo from public.checklist_itens where ativo order by grupo');
+      expect(grupos.map((g) => g.grupo)).toEqual(['Avarias', 'Cabine', 'Exterior', 'Motor e fluidos', 'Pneus', 'Retrovisores']);
+      const total = await rows<{ tipo: string; n: number }>('select tipo::text, count(*)::int as n from public.checklist_modelo group by tipo order by tipo');
+      expect(total).toEqual([{ tipo: 'diario', n: 16 }, { tipo: 'mensal', n: 22 }, { tipo: 'semanal', n: 20 }]);
+    });
+    await expect(as(null, () => rows('select * from public.checklist_itens'))).rejects.toThrow(/permission denied/);
+  });
+
+  it('supervisor não altera modelos nem o catálogo', async () => {
+    await as(SUP_SP, async () => {
+      await expect(db.query(`select public.definir_modelo_checklist('diario', array['frente'])`)).rejects.toThrow(/Somente o Administrador/);
+      expect((await db.query(`delete from public.checklist_modelo where tipo = 'diario'`)).affectedRows).toBe(0);
+      expect((await db.query(`update public.checklist_itens set nome = 'x' where codigo = 'frente'`)).affectedRows).toBe(0);
+    });
+  });
+
+  it('admin redefine o diário e o próximo checklist segue o modelo novo', async () => {
+    const CK3 = '40000000-0000-4000-8000-000000000003';
+    await as(ADMIN, async () => {
+      await expect(db.query(`select public.definir_modelo_checklist('diario', array['vazamento_avaria'])`)).rejects.toThrow(/ao menos uma foto/);
+      await expect(db.query(`select public.definir_modelo_checklist('diario', array['frente', 'nao_existe'])`)).rejects.toThrow(/inválido/);
+      await db.query(`select public.definir_modelo_checklist('diario', array['frente', 'painel'])`);
+    });
+    await as(SUP_SP, async () => {
+      await salvar(CK3, 'diario', V_SP, M_SP, 1600, fotos(F_SP, CK3, {}, ['frente', 'painel']), {});
+      expect(await rows('select respostas from public.checklists where id = $1', [CK3])).toEqual([{ respostas: {} }]);
     });
   });
 });

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from 'react';
-import { AlertTriangle, ArrowLeft, ArrowRight, Check, CircleCheck, Loader2, Send, Trash2, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowRight, Check, CircleCheck, CircleX, Loader2, Send, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { salvarChecklist } from '@/actions/checklists';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -11,13 +11,20 @@ import { Field } from '@/components/ui/field';
 import { Input, Select, Textarea } from '@/components/ui/input';
 import { ChecklistStatusBadge } from '@/components/ui/status-badges';
 import {
-  CHECKLIST_ETAPAS,
+  ITEM_PAINEL,
   SEVERIDADE_LABEL,
-  TOTAL_ETAPAS,
+  TIPOS_CHECKLIST,
+  agruparItens,
   calcularStatusChecklist,
   caminhoFotoChecklist,
   contarSeveridades,
-  type CategoriaFoto,
+  fotoRecente,
+  fotosEsperadas,
+  tipoLabel,
+  totalFotosObrigatorias,
+  type ChecklistTipo,
+  type ItemChecklist,
+  type ModelosChecklist,
 } from '@/lib/checklist/etapas';
 import { compressImage, formatBytes } from '@/lib/image/compress';
 import { createClient } from '@/lib/supabase/client';
@@ -25,23 +32,20 @@ import { uuid } from '@/lib/uuid';
 import { cn } from '@/lib/utils';
 import { clearDraft, parseDraft, readDraftRaw, saveDraft, subscribeDraft } from './draft';
 import { EtapaCaptura } from './etapa-captura';
-import type { ChecklistDraft, EtapasState, EtapaState, MotoristaWizard, VeiculoWizard } from './types';
+import type { ChecklistDraft, EtapasState, EtapaState, MotoristaWizard, RespostasState, VeiculoWizard } from './types';
 
-const PASSO_IDENTIFICACAO = 0;
-const PASSO_REVISAO = TOTAL_ETAPAS + 1;
+const PASSO_IDENTIFICACAO = 'identificacao';
+const PASSO_REVISAO = 'revisao';
 const UPLOAD_TENTATIVAS = 3;
 
-const etapaVazia = (): EtapaState => ({
+const ETAPA_VAZIA: EtapaState = {
   fase: 'vazia',
   fotoPath: null,
   previewUrl: null,
   severidade: 'ok',
   observacao: '',
   marcadores: [],
-});
-
-const etapasIniciais = (): EtapasState =>
-  Object.fromEntries(CHECKLIST_ETAPAS.map((e) => [e.categoria, etapaVazia()])) as EtapasState;
+};
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -55,21 +59,27 @@ interface ChecklistWizardProps {
   userId: string;
   veiculos: VeiculoWizard[];
   motoristas: MotoristaWizard[];
+  /** itens de cada tipo (checklist_modelo), já ordenados */
+  modelos: ModelosChecklist;
   veiculoInicialId?: string;
+  tipoInicial?: ChecklistTipo;
 }
 
-export function ChecklistWizard({ userId, veiculos, motoristas, veiculoInicialId }: ChecklistWizardProps) {
+export function ChecklistWizard({ userId, veiculos, motoristas, modelos, veiculoInicialId, tipoInicial }: ChecklistWizardProps) {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
-  const [passo, setPasso] = useState(PASSO_IDENTIFICACAO);
+  const [passo, setPasso] = useState<string>(PASSO_IDENTIFICACAO);
   // O id é gerado no cliente: as fotos sobem para <filial>/<checklistId>/ ANTES do envio final.
   const [checklistId, setChecklistId] = useState(uuid);
+  const [tipo, setTipo] = useState<ChecklistTipo>(tipoInicial ?? 'diario');
   const [veiculoId, setVeiculoId] = useState(veiculos.some((v) => v.id === veiculoInicialId) ? (veiculoInicialId ?? '') : '');
   const [motoristaId, setMotoristaId] = useState('');
-  const [kmAtual, setKmAtual] = useState('');
+  const [kmAtual, setKmAtual] = useState(() => String(veiculos.find((v) => v.id === veiculoInicialId)?.km_atual ?? ''));
   const [observacoesGerais, setObservacoesGerais] = useState('');
-  const [etapas, setEtapas] = useState<EtapasState>(etapasIniciais);
+  // fotos por código do item: trocar o tipo mantém as fotos dos itens em comum
+  const [etapas, setEtapas] = useState<EtapasState>({});
+  const [respostas, setRespostas] = useState<RespostasState>({});
   const [decisaoRascunho, setDecisaoRascunho] = useState<'pendente' | 'resolvida'>('pendente');
   const [restaurando, setRestaurando] = useState(false);
   const [concluido, setConcluido] = useState(false);
@@ -77,7 +87,7 @@ export function ChecklistWizard({ userId, veiculos, motoristas, veiculoInicialId
   const [enviando, startEnviar] = useTransition();
 
   const etapasRef = useRef(etapas);
-  const blobs = useRef<Partial<Record<CategoriaFoto, Blob>>>({});
+  const blobs = useRef<Partial<Record<string, Blob>>>({});
   useEffect(() => {
     etapasRef.current = etapas;
   });
@@ -87,6 +97,24 @@ export function ChecklistWizard({ userId, veiculos, motoristas, veiculoInicialId
     () => motoristas.filter((m) => m.filial_id === veiculo?.filial_id),
     [motoristas, veiculo?.filial_id],
   );
+
+  /* ------------------------------ itens do tipo ------------------------------ */
+
+  const grupos = useMemo(() => agruparItens(modelos[tipo] ?? []), [modelos, tipo]);
+  const itens = useMemo(() => grupos.flatMap((g) => g.itens), [grupos]);
+  const passos = useMemo(() => [PASSO_IDENTIFICACAO, ...itens.map((i) => i.codigo), PASSO_REVISAO], [itens]);
+  // passo de um item que não existe no tipo atual (rascunho antigo, modelo alterado) => identificação
+  const passoAtual = passos.includes(passo) ? passo : PASSO_IDENTIFICACAO;
+  const indicePasso = passos.indexOf(passoAtual);
+  const itemAtual = itens.find((i) => i.codigo === passoAtual) ?? null;
+  const grupoAtual = itemAtual ? grupos.find((g) => g.grupo === itemAtual.grupo) : undefined;
+  const temPainel = itens.some((i) => i.codigo === ITEM_PAINEL);
+  const etapa = (codigo: string) => etapas[codigo] ?? ETAPA_VAZIA;
+
+  // cada passo começa do topo (o celular costuma estar rolado até os botões de condição)
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [passoAtual]);
 
   /* ------------------------------ rascunho ------------------------------ */
 
@@ -112,40 +140,49 @@ export function ChecklistWizard({ userId, veiculos, motoristas, veiculoInicialId
     if (rascunho || !veiculoId || concluido) return;
     const timer = setTimeout(() => {
       const salvas: ChecklistDraft['etapas'] = {};
-      for (const e of CHECKLIST_ETAPAS) {
-        const s = etapas[e.categoria];
-        if (s.fase === 'enviada' && s.fotoPath) {
-          salvas[e.categoria] = { fotoPath: s.fotoPath, severidade: s.severidade, observacao: s.observacao, marcadores: s.marcadores };
+      for (const [codigo, s] of Object.entries(etapas)) {
+        if (s?.fase === 'enviada' && s.fotoPath) {
+          salvas[codigo] = { fotoPath: s.fotoPath, severidade: s.severidade, observacao: s.observacao, marcadores: s.marcadores };
         }
       }
-      saveDraft(userId, { checklistId, veiculoId, motoristaId, kmAtual, observacoesGerais, passo, etapas: salvas, savedAt: Date.now() });
+      saveDraft(userId, {
+        checklistId,
+        tipo,
+        veiculoId,
+        motoristaId,
+        kmAtual,
+        observacoesGerais,
+        passo: passoAtual,
+        etapas: salvas,
+        respostas,
+        savedAt: Date.now(),
+      });
       // a partir daqui o rascunho no storage é o PRÓPRIO progresso desta sessão, nunca um "rascunho antigo pendente"
       setDecisaoRascunho('resolvida');
     }, 300);
     return () => clearTimeout(timer);
-  }, [rascunho, concluido, userId, checklistId, veiculoId, motoristaId, kmAtual, observacoesGerais, passo, etapas]);
+  }, [rascunho, concluido, userId, checklistId, tipo, veiculoId, motoristaId, kmAtual, observacoesGerais, passoAtual, etapas, respostas]);
 
   async function restaurarRascunho(d: ChecklistDraft) {
     setRestaurando(true);
-    const caminhos = Object.values(d.etapas).map((e) => e.fotoPath);
-    const { data } = await supabase.storage.from('checklists').createSignedUrls(caminhos, 3600);
+    const salvas = Object.entries(d.etapas).filter((e): e is [string, NonNullable<(typeof e)[1]>] => Boolean(e[1]));
+    const { data } = await supabase.storage.from('checklists').createSignedUrls(salvas.map(([, e]) => e.fotoPath), 3600);
     const urls = new Map((data ?? []).filter((i) => i.signedUrl && i.path).map((i) => [i.path as string, i.signedUrl]));
 
-    const restauradas = etapasIniciais();
-    for (const e of CHECKLIST_ETAPAS) {
-      const salva = d.etapas[e.categoria];
-      const url = salva ? urls.get(salva.fotoPath) : undefined;
-      // foto que não está mais no Storage volta a ser "vazia" (precisa ser refeita)
-      if (salva && url) {
-        restauradas[e.categoria] = { ...etapaVazia(), ...salva, fase: 'enviada', previewUrl: url };
-      }
+    // foto que não está mais no Storage fica de fora (precisa ser refeita)
+    const restauradas: EtapasState = {};
+    for (const [codigo, salva] of salvas) {
+      const url = urls.get(salva.fotoPath);
+      if (url) restauradas[codigo] = { ...ETAPA_VAZIA, ...salva, fase: 'enviada', previewUrl: url };
     }
     setChecklistId(d.checklistId);
+    setTipo(modelos[d.tipo] ? d.tipo : 'diario');
     setVeiculoId(d.veiculoId);
     setMotoristaId(d.motoristaId);
     setKmAtual(d.kmAtual);
     setObservacoesGerais(d.observacoesGerais);
     setEtapas(restauradas);
+    setRespostas(d.respostas);
     setPasso(d.passo);
     setDecisaoRascunho('resolvida');
     setRestaurando(false);
@@ -159,61 +196,72 @@ export function ChecklistWizard({ userId, veiculos, motoristas, veiculoInicialId
 
   /* ------------------------------ fotos ------------------------------ */
 
-  const patchEtapa = useCallback((categoria: CategoriaFoto, patch: Partial<EtapaState>) => {
-    setEtapas((prev) => ({ ...prev, [categoria]: { ...prev[categoria], ...patch } }));
+  const patchEtapa = useCallback((codigo: string, patch: Partial<EtapaState>) => {
+    setEtapas((prev) => ({ ...prev, [codigo]: { ...(prev[codigo] ?? ETAPA_VAZIA), ...patch } }));
   }, []);
 
-  async function enviarFoto(categoria: CategoriaFoto) {
-    const blob = blobs.current[categoria];
+  async function enviarFoto(codigo: string) {
+    const blob = blobs.current[codigo];
     if (!blob || !veiculo) return;
-    const path = caminhoFotoChecklist(veiculo.filial_id, checklistId, categoria);
-    patchEtapa(categoria, { fase: 'enviando', erro: undefined });
+    const path = caminhoFotoChecklist(veiculo.filial_id, checklistId, codigo);
+    patchEtapa(codigo, { fase: 'enviando', erro: undefined });
 
     for (let tentativa = 1; tentativa <= UPLOAD_TENTATIVAS; tentativa++) {
       const { error } = await supabase.storage
         .from('checklists')
         .upload(path, blob, { upsert: true, contentType: 'image/jpeg', cacheControl: '3600' });
       if (!error) {
-        patchEtapa(categoria, { fase: 'enviada', fotoPath: path, erro: undefined });
+        patchEtapa(codigo, { fase: 'enviada', fotoPath: path, erro: undefined });
         return;
       }
       if (tentativa < UPLOAD_TENTATIVAS) await sleep(tentativa * 1000);
     }
-    patchEtapa(categoria, { fase: 'erro', erro: 'Não foi possível enviar a foto. Verifique a conexão e tente novamente.' });
+    patchEtapa(codigo, { fase: 'erro', erro: 'Não foi possível enviar a foto. Verifique a conexão e tente novamente.' });
   }
 
-  async function processarFoto(categoria: CategoriaFoto, file: File) {
+  async function processarFoto(codigo: string, file: File) {
     if (!veiculo) return;
-    patchEtapa(categoria, { fase: 'processando', erro: undefined });
+    // só câmera: um arquivo antigo é foto de galeria (ou de outro dia)
+    if (!fotoRecente(file.lastModified)) {
+      patchEtapa(codigo, { erro: 'Foto antiga não é aceita. Toque em "Tirar foto" e fotografe agora.' });
+      return;
+    }
+    patchEtapa(codigo, { fase: 'processando', erro: undefined });
     try {
       const comprimida = await compressImage(file, { maxDimension: 1600, quality: 0.8 });
-      blobs.current[categoria] = comprimida.blob;
-      const anterior = etapasRef.current[categoria].previewUrl;
+      blobs.current[codigo] = comprimida.blob;
+      const anterior = etapasRef.current[codigo]?.previewUrl;
       if (anterior?.startsWith('blob:')) URL.revokeObjectURL(anterior);
-      patchEtapa(categoria, {
+      patchEtapa(codigo, {
         previewUrl: URL.createObjectURL(comprimida.blob),
         tamanho: `${formatBytes(comprimida.originalSize)} → ${formatBytes(comprimida.blob.size)}`,
         fotoPath: null,
       });
-      await enviarFoto(categoria);
+      await enviarFoto(codigo);
     } catch {
-      patchEtapa(categoria, {
-        fase: etapasRef.current[categoria].previewUrl ? 'erro' : 'vazia',
+      patchEtapa(codigo, {
+        fase: etapasRef.current[codigo]?.previewUrl ? 'erro' : 'vazia',
         erro: 'Não foi possível processar esta imagem. Tire outra foto.',
       });
     }
   }
 
+  function responder(item: ItemChecklist, valor: boolean) {
+    setRespostas((prev) => ({ ...prev, [item.codigo]: valor }));
+    // vazamento/avaria nunca é "Conforme"
+    if (valor && etapa(item.codigo).severidade === 'ok') patchEtapa(item.codigo, { severidade: 'atencao' });
+  }
+
   // blobs locais são liberados ao sair
   useEffect(
     () => () => {
-      for (const e of Object.values(etapasRef.current)) if (e.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(e.previewUrl);
+      for (const e of Object.values(etapasRef.current)) if (e?.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(e.previewUrl);
     },
     [],
   );
 
   // aviso ao tentar fechar com upload em andamento
-  const algumOcupado = Object.values(etapas).some((e) => e.fase === 'processando' || e.fase === 'enviando');
+  const algumOcupado = Object.values(etapas).some((e) => e?.fase === 'processando' || e?.fase === 'enviando');
   useEffect(() => {
     if (!algumOcupado) return;
     const handler = (e: BeforeUnloadEvent) => e.preventDefault();
@@ -226,36 +274,49 @@ export function ChecklistWizard({ userId, veiculos, motoristas, veiculoInicialId
   const kmNumero = Number(kmAtual);
   const kmValido = kmAtual.trim() !== '' && Number.isInteger(kmNumero) && kmNumero >= (veiculo?.km_atual ?? 0);
 
-  const etapaValida = (categoria: CategoriaFoto) => {
-    const e = etapas[categoria];
+  const itemValido = (item: ItemChecklist) => {
+    const e = etapa(item.codigo);
+    if (item.condicional) {
+      const resposta = respostas[item.codigo];
+      if (resposta === undefined) return false;
+      return !resposta || (e.fase === 'enviada' && e.severidade !== 'ok' && e.observacao.trim().length > 0);
+    }
     const base = e.fase === 'enviada' && (e.severidade === 'ok' || e.observacao.trim().length > 0);
-    return categoria === 'painel' ? base && kmValido : base;
+    return item.codigo === ITEM_PAINEL ? base && kmValido : base;
   };
 
-  const identificacaoValida = Boolean(veiculo && motoristaId);
-  const validas = CHECKLIST_ETAPAS.map((e) => etapaValida(e.categoria));
+  const identificacaoValida = Boolean(veiculo && motoristaId) && itens.length > 0 && (temPainel || kmValido);
+  const validas = itens.map(itemValido);
   const primeiroPendente = validas.indexOf(false); // -1 => tudo pronto
   const todasValidas = primeiroPendente === -1;
-  const passoMaximo = !identificacaoValida ? PASSO_IDENTIFICACAO : todasValidas ? PASSO_REVISAO : primeiroPendente + 1;
+  const passoMaximo = !identificacaoValida ? 0 : todasValidas ? passos.length - 1 : primeiroPendente + 1;
+  const podeAvancar = passoAtual === PASSO_IDENTIFICACAO ? identificacaoValida : itemAtual ? itemValido(itemAtual) : false;
 
-  const etapaAtual = passo >= 1 && passo <= TOTAL_ETAPAS ? CHECKLIST_ETAPAS[passo - 1] : null;
-  const podeAvancar = passo === PASSO_IDENTIFICACAO ? identificacaoValida : etapaAtual ? validas[passo - 1] === true : false;
-
-  const severidades = CHECKLIST_ETAPAS.filter((e) => etapas[e.categoria].fase === 'enviada').map((e) => etapas[e.categoria].severidade);
+  const esperados = fotosEsperadas(itens, respostas);
+  const enviadas = esperados.filter((c) => etapa(c).fase === 'enviada');
+  const severidades = enviadas.map((c) => etapa(c).severidade);
   const statusGeral = calcularStatusChecklist(severidades);
   const contagem = contarSeveridades(severidades);
-  const fotosEnviadas = CHECKLIST_ETAPAS.filter((e) => etapas[e.categoria].fase === 'enviada').length;
-  const nenhumaFoto = fotosEnviadas === 0 && !algumOcupado;
+  const nenhumaFoto = !Object.values(etapas).some((e) => e && e.fase !== 'vazia');
 
   function motivoBloqueio(): string | null {
     if (podeAvancar) return null;
-    if (passo === PASSO_IDENTIFICACAO) return 'Selecione o veículo e o motorista.';
-    if (!etapaAtual) return null;
-    const e = etapas[etapaAtual.categoria];
+    if (passoAtual === PASSO_IDENTIFICACAO) {
+      if (!veiculo || !motoristaId) return 'Selecione o veículo e o motorista.';
+      if (itens.length === 0) return 'Este tipo de checklist não tem fotos configuradas.';
+      return `Informe o KM do hodômetro (mínimo ${veiculo.km_atual}).`;
+    }
+    if (!itemAtual) return null;
+    const e = etapa(itemAtual.codigo);
+    if (itemAtual.condicional) {
+      const resposta = respostas[itemAtual.codigo];
+      if (resposta === undefined) return 'Responda Sim ou Não para continuar.';
+    }
     if (e.fase === 'processando' || e.fase === 'enviando') return 'Aguarde o envio da foto…';
-    if (e.fase !== 'enviada') return 'Tire a foto desta etapa para continuar.';
+    if (e.fase !== 'enviada') return itemAtual.condicional ? 'Tire a foto do vazamento ou da avaria.' : 'Tire a foto deste item para continuar.';
+    if (itemAtual.condicional && e.severidade === 'ok') return 'Classifique como Atenção ou Avaria.';
     if (e.severidade !== 'ok' && !e.observacao.trim()) return 'Descreva a inconformidade para continuar.';
-    if (etapaAtual.categoria === 'painel' && !kmValido) return `Informe o KM do hodômetro (mínimo ${veiculo?.km_atual ?? 0}).`;
+    if (itemAtual.codigo === ITEM_PAINEL && !kmValido) return `Informe o KM do hodômetro (mínimo ${veiculo?.km_atual ?? 0}).`;
     return null;
   }
 
@@ -267,14 +328,16 @@ export function ChecklistWizard({ userId, veiculos, motoristas, veiculoInicialId
     startEnviar(async () => {
       const resultado = await salvarChecklist({
         checklistId,
+        tipo,
         veiculoId: veiculo.id,
         motoristaId,
         kmAtual: kmNumero,
         observacoesGerais: observacoesGerais.trim() || undefined,
-        itens: CHECKLIST_ETAPAS.map((e) => {
-          const s = etapas[e.categoria];
+        respostas: Object.fromEntries(itens.filter((i) => i.condicional).map((i) => [i.codigo, respostas[i.codigo] === true])),
+        itens: esperados.map((codigo) => {
+          const s = etapa(codigo);
           return {
-            categoria: e.categoria,
+            categoria: codigo,
             fotoPath: s.fotoPath ?? '',
             severidade: s.severidade,
             observacao: s.observacao.trim() || undefined,
@@ -313,63 +376,92 @@ export function ChecklistWizard({ userId, veiculos, motoristas, veiculoInicialId
     );
   }
 
+  const campoKm = (
+    <Field
+      label="KM do hodômetro"
+      htmlFor="km"
+      required
+      error={kmAtual && !kmValido ? `O KM não pode ser menor que o último registrado (${veiculo?.km_atual ?? 0}).` : undefined}
+      hint={`Último KM registrado: ${(veiculo?.km_atual ?? 0).toLocaleString('pt-BR')}`}
+    >
+      <Input id="km" type="number" inputMode="numeric" min={veiculo?.km_atual ?? 0} value={kmAtual} onChange={(e) => setKmAtual(e.target.value)} className="h-12 text-lg" />
+    </Field>
+  );
+
+  const corDoItem = (item: ItemChecklist) => {
+    if (item.condicional && respostas[item.codigo] === false) return 'bg-success';
+    if (item.condicional && respostas[item.codigo] === undefined) return 'bg-muted';
+    const s = etapa(item.codigo);
+    return s.fase === 'enviada' ? SEVERIDADE_BAR[s.severidade] : 'bg-muted';
+  };
+
   return (
     <div className="mx-auto flex min-h-dvh max-w-xl flex-col">
-      {/* Cabeçalho fixo: progresso + status geral em tempo real */}
+      {/* Cabeçalho fixo: progresso por grupo + status geral em tempo real */}
       <header className="sticky top-0 z-20 -mx-4 border-b bg-background/95 px-4 pt-safe backdrop-blur md:-mx-8 md:px-8">
         <div className="flex items-center justify-between gap-2 py-2.5">
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             <Link href="/checklists" aria-label="Sair do checklist (o progresso é salvo)" className={buttonVariants({ variant: 'ghost', size: 'icon' })}>
               <X />
             </Link>
-            <div>
-              <p className="text-sm leading-tight font-semibold">Novo checklist</p>
-              <p className="text-xs text-muted-foreground">
+            <div className="min-w-0">
+              <p className="truncate text-sm leading-tight font-semibold">Checklist {tipoLabel(tipo).toLowerCase()}</p>
+              <p className="truncate text-xs text-muted-foreground">
                 {veiculo ? `${veiculo.placa} · ` : ''}
-                {fotosEnviadas}/{TOTAL_ETAPAS} fotos
+                {enviadas.length}/{esperados.length} fotos
               </p>
             </div>
           </div>
-          {fotosEnviadas > 0 ? (
-            <div className="flex items-center gap-2" aria-live="polite">
-              {contagem.atencao > 0 ? <span className="text-xs font-medium text-warning-text">{contagem.atencao} atenção</span> : null}
-              {contagem.critico > 0 ? <span className="text-xs font-medium text-destructive-text">{contagem.critico} avaria</span> : null}
+          {enviadas.length > 0 ? (
+            <div className="flex shrink-0 items-center gap-2" aria-live="polite">
+              {contagem.atencao > 0 ? <span className="hidden text-xs font-medium text-warning-text min-[380px]:inline">{contagem.atencao} atenção</span> : null}
+              {contagem.critico > 0 ? <span className="hidden text-xs font-medium text-destructive-text min-[380px]:inline">{contagem.critico} avaria</span> : null}
               <ChecklistStatusBadge status={statusGeral} />
             </div>
           ) : null}
         </div>
-        <ol className="flex gap-1 pb-2.5" aria-label="Progresso das etapas">
-          {CHECKLIST_ETAPAS.map((e, i) => {
-            const s = etapas[e.categoria];
-            const desbloqueada = i + 1 <= passoMaximo;
-            return (
-              <li key={e.categoria} className="flex-1">
-                <button
-                  type="button"
-                  disabled={!desbloqueada}
-                  onClick={() => setPasso(i + 1)}
-                  aria-label={`Etapa ${i + 1}: ${e.titulo}${s.fase === 'enviada' ? ` — ${SEVERIDADE_LABEL[s.severidade]}` : ''}`}
-                  aria-current={passo === i + 1 ? 'step' : undefined}
-                  className={cn(
-                    'h-2.5 w-full rounded-full transition-colors',
-                    s.fase === 'enviada' ? SEVERIDADE_BAR[s.severidade] : 'bg-muted',
-                    passo === i + 1 && 'ring-2 ring-primary ring-offset-1 ring-offset-background',
-                    !desbloqueada && 'opacity-50',
-                  )}
-                />
-              </li>
-            );
-          })}
+        <ol className="flex gap-1.5 pb-1.5" aria-label="Progresso por grupo">
+          {grupos.map((g) => (
+            <li key={g.grupo} className="flex gap-0.5" style={{ flex: `${g.itens.length} 1 0%` }}>
+              {g.itens.map((item) => {
+                const desbloqueado = passos.indexOf(item.codigo) <= passoMaximo;
+                const s = etapa(item.codigo);
+                return (
+                  <button
+                    key={item.codigo}
+                    type="button"
+                    disabled={!desbloqueado}
+                    onClick={() => setPasso(item.codigo)}
+                    aria-label={`${g.grupo}: ${item.nome}${s.fase === 'enviada' ? ` — ${SEVERIDADE_LABEL[s.severidade]}` : ''}`}
+                    aria-current={passoAtual === item.codigo ? 'step' : undefined}
+                    className={cn(
+                      'h-2.5 min-w-0 flex-1 rounded-full transition-colors',
+                      corDoItem(item),
+                      passoAtual === item.codigo && 'ring-2 ring-primary ring-offset-1 ring-offset-background',
+                      !desbloqueado && 'opacity-50',
+                    )}
+                  />
+                );
+              })}
+            </li>
+          ))}
         </ol>
+        <p className="truncate pb-2 text-xs font-medium text-muted-foreground">
+          {grupoAtual
+            ? `${grupoAtual.grupo} · ${grupoAtual.itens.indexOf(itemAtual!) + 1} de ${grupoAtual.itens.length}`
+            : passoAtual === PASSO_REVISAO
+              ? 'Revisão final'
+              : 'Identificação'}
+        </p>
       </header>
 
       <div className="flex-1 py-4 pb-40">
         {rascunho ? (
           <div className="mb-4 flex flex-col gap-3 rounded-xl border border-primary/30 bg-accent p-4" role="alert">
             <p className="text-sm font-medium">
-              Há um checklist em andamento
+              Há um checklist {tipoLabel(rascunho.tipo).toLowerCase()} em andamento
               {veiculos.find((v) => v.id === rascunho.veiculoId) ? ` (${veiculos.find((v) => v.id === rascunho.veiculoId)!.placa})` : ''} com{' '}
-              {Object.keys(rascunho.etapas).length}/{TOTAL_ETAPAS} fotos. Deseja continuar de onde parou?
+              {Object.keys(rascunho.etapas).length} foto(s). Deseja continuar de onde parou?
             </p>
             <div className="flex gap-2">
               <Button type="button" className="flex-1" disabled={restaurando} onClick={() => restaurarRascunho(rascunho)}>
@@ -382,14 +474,45 @@ export function ChecklistWizard({ userId, veiculos, motoristas, veiculoInicialId
           </div>
         ) : null}
 
-        {passo === PASSO_IDENTIFICACAO ? (
+        {passoAtual === PASSO_IDENTIFICACAO ? (
           <section className="flex flex-col gap-4" aria-labelledby="ident-titulo">
             <header>
               <h2 id="ident-titulo" className="text-xl font-bold">
                 Identificação
               </h2>
-              <p className="mt-1 text-sm text-muted-foreground">Escolha o veículo e o motorista. Depois serão {TOTAL_ETAPAS} fotos obrigatórias.</p>
+              <p className="mt-1 text-sm text-muted-foreground">Escolha o tipo de checklist, o veículo e o motorista.</p>
             </header>
+
+            <fieldset className="flex flex-col gap-2">
+              <legend className="mb-1 text-sm font-medium">Tipo de checklist</legend>
+              <div role="radiogroup" aria-label="Tipo de checklist" className="grid grid-cols-3 gap-2">
+                {TIPOS_CHECKLIST.map((t) => (
+                  <button
+                    key={t.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={tipo === t.value}
+                    data-active={tipo === t.value}
+                    onClick={() => setTipo(t.value)}
+                    className="flex min-h-16 flex-col items-center justify-center gap-0.5 rounded-xl border-2 bg-card px-1 py-2 text-center transition-colors data-[active=true]:border-primary data-[active=true]:bg-accent"
+                  >
+                    <span className="text-sm font-semibold">{t.label}</span>
+                    <span className="text-xs text-muted-foreground">{totalFotosObrigatorias(modelos[t.value] ?? [])} fotos</span>
+                  </button>
+                ))}
+              </div>
+              <ul className="flex flex-wrap gap-1.5 pt-1" aria-label="Grupos de fotos deste checklist">
+                {grupos.map((g) => (
+                  <li key={g.grupo} className="rounded-full border bg-card px-2.5 py-1 text-xs">
+                    <span className="font-medium">{g.grupo}</span>{' '}
+                    <span className="text-muted-foreground">
+                      {g.itens.every((i) => i.condicional) ? 'Sim/Não' : g.itens.filter((i) => !i.condicional).length}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </fieldset>
+
             <Field
               label="Veículo"
               htmlFor="veiculo"
@@ -432,44 +555,73 @@ export function ChecklistWizard({ userId, veiculos, motoristas, veiculoInicialId
                 ))}
               </Select>
             </Field>
+            {/* sem a foto do painel no modelo, o KM é pedido aqui */}
+            {veiculo && !temPainel ? campoKm : null}
           </section>
         ) : null}
 
-        {etapaAtual ? (
-          <EtapaCaptura
-            key={etapaAtual.categoria}
-            indice={passo}
-            total={TOTAL_ETAPAS}
-            etapa={etapaAtual}
-            estado={etapas[etapaAtual.categoria]}
-            onFile={(file) => void processarFoto(etapaAtual.categoria, file)}
-            onRetry={() => void enviarFoto(etapaAtual.categoria)}
-            onChange={(patch) => patchEtapa(etapaAtual.categoria, patch)}
-          >
-            {etapaAtual.categoria === 'painel' ? (
-              <Field
-                label="KM do hodômetro"
-                htmlFor="km"
-                required
-                error={kmAtual && !kmValido ? `O KM não pode ser menor que o último registrado (${veiculo?.km_atual ?? 0}).` : undefined}
-                hint={`Último KM registrado: ${(veiculo?.km_atual ?? 0).toLocaleString('pt-BR')}`}
-              >
-                <Input id="km" type="number" inputMode="numeric" min={veiculo?.km_atual ?? 0} value={kmAtual} onChange={(e) => setKmAtual(e.target.value)} className="h-12 text-lg" />
-              </Field>
+        {itemAtual ? (
+          <section key={itemAtual.codigo} className="flex flex-col gap-4" aria-labelledby="etapa-titulo">
+            <header>
+              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{itemAtual.grupo}</p>
+              <h2 id="etapa-titulo" className="text-xl font-bold">
+                {itemAtual.condicional ? itemAtual.pergunta : itemAtual.nome}
+              </h2>
+              {itemAtual.instrucao && (!itemAtual.condicional || respostas[itemAtual.codigo]) ? (
+                <p className="mt-1 text-sm text-muted-foreground">{itemAtual.instrucao}</p>
+              ) : null}
+            </header>
+
+            {itemAtual.condicional ? (
+              <div role="radiogroup" aria-label={itemAtual.pergunta ?? itemAtual.nome} className="grid grid-cols-2 gap-2">
+                {([
+                  { valor: true, label: 'Sim', icon: AlertTriangle, ativo: 'data-[active=true]:border-destructive data-[active=true]:bg-destructive/15 data-[active=true]:text-destructive-text' },
+                  { valor: false, label: 'Não', icon: CircleCheck, ativo: 'data-[active=true]:border-success data-[active=true]:bg-success/15 data-[active=true]:text-success-text' },
+                ] as const).map(({ valor, label, icon: Icon, ativo }) => (
+                  <button
+                    key={label}
+                    type="button"
+                    role="radio"
+                    aria-checked={respostas[itemAtual.codigo] === valor}
+                    data-active={respostas[itemAtual.codigo] === valor}
+                    onClick={() => responder(itemAtual, valor)}
+                    className={cn('flex min-h-16 items-center justify-center gap-2 rounded-xl border-2 bg-card text-lg font-semibold transition-colors', ativo)}
+                  >
+                    <Icon className="size-5" /> {label}
+                  </button>
+                ))}
+              </div>
             ) : null}
-          </EtapaCaptura>
+
+            {!itemAtual.condicional || respostas[itemAtual.codigo] === true ? (
+              <EtapaCaptura
+                titulo={itemAtual.nome}
+                estado={etapa(itemAtual.codigo)}
+                somenteProblema={itemAtual.condicional}
+                onFile={(file) => void processarFoto(itemAtual.codigo, file)}
+                onRetry={() => void enviarFoto(itemAtual.codigo)}
+                onChange={(patch) => patchEtapa(itemAtual.codigo, patch)}
+              >
+                {itemAtual.codigo === ITEM_PAINEL ? campoKm : null}
+              </EtapaCaptura>
+            ) : respostas[itemAtual.codigo] === false ? (
+              <p className="flex items-center gap-2 rounded-xl border border-success/40 bg-success/10 px-3 py-3 text-sm font-medium text-success-text">
+                <CircleCheck className="size-5 shrink-0" /> Sem vazamento ou avaria. Nenhuma foto necessária.
+              </p>
+            ) : null}
+          </section>
         ) : null}
 
-        {passo === PASSO_REVISAO ? (
+        {passoAtual === PASSO_REVISAO ? (
           <section className="flex flex-col gap-4" aria-labelledby="rev-titulo">
             <header>
               <h2 id="rev-titulo" className="text-xl font-bold">
                 Revisão final
               </h2>
-              <p className="mt-1 text-sm text-muted-foreground">Confira as fotos. Toque em uma etapa para ajustar.</p>
+              <p className="mt-1 text-sm text-muted-foreground">Confira as fotos de cada grupo. Toque em uma para ajustar.</p>
             </header>
 
-            <div className="flex items-center gap-2 rounded-xl border bg-card p-3">
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card p-3">
               <span className="text-sm text-muted-foreground">Status do checklist:</span>
               <ChecklistStatusBadge status={statusGeral} />
               <span className="ml-auto text-xs text-muted-foreground">
@@ -477,47 +629,67 @@ export function ChecklistWizard({ userId, veiculos, motoristas, veiculoInicialId
               </span>
             </div>
 
-            <ul className="grid grid-cols-3 gap-2">
-              {CHECKLIST_ETAPAS.map((e, i) => {
-                const s = etapas[e.categoria];
-                return (
-                  <li key={e.categoria}>
-                    <button
-                      type="button"
-                      onClick={() => setPasso(i + 1)}
-                      className={cn('relative block aspect-square w-full overflow-hidden rounded-lg border-2 bg-muted text-left', {
-                        'border-success': s.severidade === 'ok',
-                        'border-warning': s.severidade === 'atencao',
-                        'border-destructive': s.severidade === 'critico',
-                      })}
-                      aria-label={`Etapa ${i + 1}: ${e.titulo} — ${SEVERIDADE_LABEL[s.severidade]}. Toque para editar`}
-                    >
-                      {s.previewUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={s.previewUrl} alt="" className="size-full object-cover" />
-                      ) : null}
-                      <span className="absolute inset-x-0 bottom-0 truncate bg-black/65 px-1.5 py-0.5 text-[10px] font-medium text-white">
-                        {i + 1}. {e.titulo}
-                      </span>
-                      {s.severidade !== 'ok' ? (
-                        <span
-                          className={cn(
-                            'absolute top-1 right-1 flex size-5 items-center justify-center rounded-full text-white',
-                            s.severidade === 'critico' ? 'bg-destructive' : 'bg-warning text-white',
-                          )}
+            {grupos.map((g) => (
+              <div key={g.grupo} className="flex flex-col gap-2">
+                <h3 className="text-sm font-semibold">{g.grupo}</h3>
+                <ul className="grid grid-cols-3 gap-2">
+                  {g.itens.map((item) => {
+                    const s = etapa(item.codigo);
+                    if (item.condicional && respostas[item.codigo] !== true) {
+                      return (
+                        <li key={item.codigo}>
+                          <button
+                            type="button"
+                            onClick={() => setPasso(item.codigo)}
+                            className="flex aspect-square w-full flex-col items-center justify-center gap-1 rounded-lg border-2 border-success bg-success/10 p-2 text-center text-success-text"
+                            aria-label={`${item.nome}: Não. Toque para editar`}
+                          >
+                            <CircleCheck className="size-6" />
+                            <span className="text-[11px] leading-tight font-medium">{item.nome}: Não</span>
+                          </button>
+                        </li>
+                      );
+                    }
+                    return (
+                      <li key={item.codigo}>
+                        <button
+                          type="button"
+                          onClick={() => setPasso(item.codigo)}
+                          className={cn('relative block aspect-square w-full overflow-hidden rounded-lg border-2 bg-muted text-left', {
+                            'border-success': s.severidade === 'ok',
+                            'border-warning': s.severidade === 'atencao',
+                            'border-destructive': s.severidade === 'critico',
+                          })}
+                          aria-label={`${item.nome} — ${SEVERIDADE_LABEL[s.severidade]}. Toque para editar`}
                         >
-                          <AlertTriangle className="size-3" />
-                        </span>
-                      ) : (
-                        <span className="absolute top-1 right-1 flex size-5 items-center justify-center rounded-full bg-success text-white">
-                          <Check className="size-3" />
-                        </span>
-                      )}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+                          {s.previewUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={s.previewUrl} alt="" className="size-full object-cover" />
+                          ) : null}
+                          <span className="absolute inset-x-0 bottom-0 truncate bg-black/65 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                            {item.nome}
+                          </span>
+                          {s.severidade !== 'ok' ? (
+                            <span
+                              className={cn(
+                                'absolute top-1 right-1 flex size-5 items-center justify-center rounded-full text-white',
+                                s.severidade === 'critico' ? 'bg-destructive' : 'bg-warning',
+                              )}
+                            >
+                              {item.condicional ? <CircleX className="size-3" /> : <AlertTriangle className="size-3" />}
+                            </span>
+                          ) : (
+                            <span className="absolute top-1 right-1 flex size-5 items-center justify-center rounded-full bg-success text-white">
+                              <Check className="size-3" />
+                            </span>
+                          )}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
 
             <Field label="Observações gerais" htmlFor="obs-gerais" hint="Opcional.">
               <Textarea id="obs-gerais" rows={3} maxLength={2000} value={observacoesGerais} onChange={(e) => setObservacoesGerais(e.target.value)} placeholder="Algo mais que o supervisor precise saber?" />
@@ -546,20 +718,20 @@ export function ChecklistWizard({ userId, veiculos, motoristas, veiculoInicialId
               variant="outline"
               size="xl"
               className="w-24 shrink-0"
-              disabled={passo === PASSO_IDENTIFICACAO || enviando}
-              onClick={() => setPasso((p) => Math.max(PASSO_IDENTIFICACAO, p - 1))}
+              disabled={indicePasso === 0 || enviando}
+              onClick={() => setPasso(passos[Math.max(0, indicePasso - 1)] ?? PASSO_IDENTIFICACAO)}
               aria-label="Etapa anterior"
             >
               <ArrowLeft className="size-5" />
             </Button>
-            {passo === PASSO_REVISAO ? (
+            {passoAtual === PASSO_REVISAO ? (
               <Button type="button" size="xl" variant="success" className="flex-1" disabled={!todasValidas || enviando} onClick={enviar}>
                 {enviando ? <Loader2 className="animate-spin" /> : <Send className="size-5" />}
                 {enviando ? 'Enviando…' : 'Enviar checklist'}
               </Button>
             ) : (
-              <Button type="button" size="xl" className="flex-1" disabled={!podeAvancar} onClick={() => setPasso((p) => Math.min(PASSO_REVISAO, p + 1))}>
-                {passo === TOTAL_ETAPAS ? (
+              <Button type="button" size="xl" className="flex-1" disabled={!podeAvancar} onClick={() => setPasso(passos[Math.min(passos.length - 1, indicePasso + 1)] ?? PASSO_REVISAO)}>
+                {passos[indicePasso + 1] === PASSO_REVISAO ? (
                   <>
                     Revisar <CircleCheck className="size-5" />
                   </>

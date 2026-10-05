@@ -1,4 +1,4 @@
-import { CircleAlert, CircleCheck, CircleHelp, TriangleAlert, Wrench } from 'lucide-react';
+import { CalendarDays, CircleAlert, CircleCheck, CircleHelp, TriangleAlert, Wrench } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { formatDateISO } from '@/lib/format';
 import type { NivelAlerta, SaudeVeiculo } from '@/lib/maintenance/alerts';
@@ -33,6 +33,16 @@ export function ChecklistStatusBadge({ status }: { status: Enums<'checklist_stat
   if (status === 'ok') return <Badge variant="success">Conforme</Badge>;
   if (status === 'atencao') return <Badge variant="warning">Atenção</Badge>;
   return <Badge variant="danger">Avaria</Badge>;
+}
+
+/** Diário / Semanal / Mensal. */
+export function ChecklistTipoBadge({ tipo }: { tipo: Enums<'checklist_tipo'> }) {
+  const label = tipo === 'mensal' ? 'Mensal' : tipo === 'semanal' ? 'Semanal' : 'Diário';
+  return (
+    <Badge variant={tipo === 'diario' ? 'secondary' : 'default'}>
+      <CalendarDays /> {label}
+    </Badge>
+  );
 }
 
 export function AlertaBadge({ nivel }: { nivel: NivelAlerta }) {

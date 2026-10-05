@@ -1,37 +1,54 @@
-import type { Enums } from '@/types/database';
+import type { Enums, Tables } from '@/types/database';
 
-export type CategoriaFoto = Enums<'categoria_foto'>;
+export type ChecklistTipo = Enums<'checklist_tipo'>;
 export type Severidade = Enums<'checklist_status'>;
 
-export interface EtapaChecklist {
-  categoria: CategoriaFoto;
-  titulo: string;
-  dica: string;
+/** Item do catálogo (tabela checklist_itens): uma foto do checklist ou uma pergunta Sim/Não com foto. */
+export type ItemChecklist = Pick<
+  Tables<'checklist_itens'>,
+  'codigo' | 'nome' | 'grupo' | 'instrucao' | 'pergunta' | 'ordem' | 'condicional'
+>;
+
+/** Itens de cada tipo, já na ordem do assistente (vem de checklist_modelo; o admin ajusta). */
+export type ModelosChecklist = Record<ChecklistTipo, ItemChecklist[]>;
+
+export const TIPOS_CHECKLIST: ReadonlyArray<{ value: ChecklistTipo; label: string; descricao: string }> = [
+  { value: 'diario', label: 'Diário', descricao: 'Antes de sair com o veículo.' },
+  { value: 'semanal', label: 'Semanal', descricao: 'Revisão da semana.' },
+  { value: 'mensal', label: 'Mensal', descricao: 'Inspeção completa do mês.' },
+];
+
+export const tipoLabel = (tipo: ChecklistTipo) => TIPOS_CHECKLIST.find((t) => t.value === tipo)?.label ?? tipo;
+
+/** Item que dá o KM do checklist (foto do hodômetro). */
+export const ITEM_PAINEL = 'painel';
+
+export const ordenarItens = <T extends { ordem: number }>(itens: readonly T[]): T[] =>
+  [...itens].sort((a, b) => a.ordem - b.ordem);
+
+/** Agrupa os itens mantendo a ordem: os grupos aparecem na ordem do seu primeiro item. */
+export function agruparItens<T extends { grupo: string; ordem: number }>(itens: readonly T[]): Array<{ grupo: string; itens: T[] }> {
+  const grupos = new Map<string, T[]>();
+  for (const item of ordenarItens(itens)) {
+    const lista = grupos.get(item.grupo);
+    if (lista) lista.push(item);
+    else grupos.set(item.grupo, [item]);
+  }
+  return [...grupos].map(([grupo, lista]) => ({ grupo, itens: lista }));
 }
 
-/** As 14 etapas obrigatórias, na ordem de execução do wizard. */
-export const CHECKLIST_ETAPAS: readonly EtapaChecklist[] = [
-  { categoria: 'lateral_direita', titulo: 'Lateral direita', dica: 'Enquadre o veículo inteiro, do para-choque dianteiro ao traseiro.' },
-  { categoria: 'lateral_esquerda', titulo: 'Lateral esquerda', dica: 'Enquadre o veículo inteiro, do para-choque dianteiro ao traseiro.' },
-  { categoria: 'frente', titulo: 'Frente', dica: 'Fotografe de frente, mostrando para-choque, capô e faróis.' },
-  { categoria: 'traseira', titulo: 'Parte de trás', dica: 'Fotografe de trás, mostrando para-choque, placa e lanternas.' },
-  { categoria: 'carroceria_portamalas', titulo: 'Carroceria ou porta-malas', dica: 'Abra o porta-malas/carroceria e mostre limpeza, estepe e carga.' },
-  { categoria: 'interior', titulo: 'Interior do veículo', dica: 'Mostre bancos, forro e limpeza da cabine.' },
-  { categoria: 'painel', titulo: 'Painel (hodômetro / combustível)', dica: 'Com o veículo ligado: hodômetro, nível de combustível e luzes de alerta legíveis.' },
-  { categoria: 'rodas', titulo: '4 rodas (pneus e aros)', dica: 'Mostre o estado de pneus e aros. Se não couber em uma foto, enquadre o conjunto.' },
-  { categoria: 'nivel_oleo', titulo: 'Nível de óleo', dica: 'Mostre a vareta de óleo retirada, com o nível visível.' },
-  { categoria: 'nivel_agua', titulo: 'Nível de água / arrefecimento', dica: 'Mostre o reservatório de arrefecimento com as marcas de nível.' },
-  { categoria: 'motor', titulo: 'Motor', dica: 'Capô aberto, enquadrando o compartimento do motor.' },
-  { categoria: 'retrovisores', titulo: 'Retrovisores', dica: 'Mostre os dois retrovisores (espelho e carcaça).' },
-  { categoria: 'para_brisa', titulo: 'Para-brisa', dica: 'Mostre o para-brisa e as palhetas; atenção a trincas e lascas.' },
-  { categoria: 'luzes_sinalizacao', titulo: 'Luzes / sinalização', dica: 'Faróis, setas e lanternas acesos (use o ajudante para conferir).' },
-] as const;
+/**
+ * Fotos exigidas: todos os itens comuns + os condicionais respondidos com "Sim".
+ * Mesma regra da RPC salvar_checklist (supabase/migrations/20260105000000_checklist_tipos.sql).
+ */
+export function fotosEsperadas(itens: readonly ItemChecklist[], respostas: Record<string, boolean | undefined>): string[] {
+  return ordenarItens(itens)
+    .filter((i) => !i.condicional || respostas[i.codigo] === true)
+    .map((i) => i.codigo);
+}
 
-export const TOTAL_ETAPAS = CHECKLIST_ETAPAS.length;
-
-export const ETAPA_POR_CATEGORIA = Object.fromEntries(
-  CHECKLIST_ETAPAS.map((e) => [e.categoria, e]),
-) as Record<CategoriaFoto, EtapaChecklist>;
+/** Quantas fotos o tipo pede, sem contar as perguntas Sim/Não. */
+export const totalFotosObrigatorias = (itens: readonly ItemChecklist[]) => itens.filter((i) => !i.condicional).length;
 
 export const SEVERIDADE_LABEL: Record<Severidade, string> = {
   ok: 'Conforme',
@@ -54,9 +71,20 @@ export function contarSeveridades(severidades: Iterable<Severidade>): Record<Sev
   return total;
 }
 
-/** Caminho no bucket "checklists": <filial>/<checklist>/<categoria>.jpg */
-export const caminhoFotoChecklist = (filialId: string, checklistId: string, categoria: CategoriaFoto) =>
-  `${filialId}/${checklistId}/${categoria}.jpg`;
+/** Caminho no bucket "checklists": <filial>/<checklist>/<item>.jpg */
+export const caminhoFotoChecklist = (filialId: string, checklistId: string, item: string) => `${filialId}/${checklistId}/${item}.jpg`;
+
+/** Foto da câmera precisa ser recente: fotos antigas (de galeria) são recusadas. */
+export const IDADE_MAXIMA_FOTO_MS = 15 * 60 * 1000;
+
+/**
+ * true se o arquivo parece ter vindo agora da câmera. Quando o navegador não informa a
+ * data (0 ou inválida, comum em WebView), aceita — a câmera já é a única opção oferecida.
+ */
+export function fotoRecente(lastModified: number, agora = Date.now()): boolean {
+  if (!Number.isFinite(lastModified) || lastModified <= 946_684_800_000 /* 2000-01-01 */) return true;
+  return agora - lastModified <= IDADE_MAXIMA_FOTO_MS;
+}
 
 /** Pin de avaria sobre a foto, em % da imagem (0–100). */
 export interface MarcadorAvaria {

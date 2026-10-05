@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { isValidCnh, isValidCpf, isValidPlaca, normalizePlaca, normalizeWhatsapp, onlyDigits } from '@/lib/validators/documentos';
-import { CHECKLIST_ETAPAS } from '@/lib/checklist/etapas';
 import { COMBUSTIVEIS, parseDecimalBR } from '@/lib/abastecimento/consumo';
 import { toISODate } from '@/lib/dates';
 import { CNH_CATEGORIAS } from '@/lib/motoristas/cnh';
@@ -147,23 +146,30 @@ export const manutencaoSchema = z.object({
 
 const marcadorSchema = z.object({ x: z.number().min(0).max(100), y: z.number().min(0).max(100) });
 
+const codigoItem = z.string().regex(/^[a-z0-9_]{2,40}$/, 'Item de checklist inválido.');
+
+/** Itens exigidos dependem do tipo (checklist_modelo): conferidos na action e de novo na RPC. */
 export const checklistSchema = z.object({
   checklistId: uuid,
+  tipo: z.enum(['diario', 'semanal', 'mensal'], 'Escolha o tipo de checklist.'),
   veiculoId: uuid,
   motoristaId: uuid,
   kmAtual: z.number().int().min(0).max(2_000_000_000),
   observacoesGerais: z.string().trim().max(2000).optional(),
+  /** perguntas Sim/Não (ex.: vazamento ou avaria) */
+  respostas: z.record(codigoItem, z.boolean()).default({}),
   itens: z
     .array(
       z.object({
-        categoria: z.enum(CHECKLIST_ETAPAS.map((e) => e.categoria) as [string, ...string[]]),
+        categoria: codigoItem,
         fotoPath: z.string().min(5).max(300),
         severidade: z.enum(['ok', 'atencao', 'critico']),
         observacao: z.string().trim().max(1000).optional(),
         marcadores: z.array(marcadorSchema).max(20),
       }),
     )
-    .length(CHECKLIST_ETAPAS.length, `O checklist exige as ${CHECKLIST_ETAPAS.length} fotos obrigatórias.`),
+    .min(1, 'O checklist precisa de fotos.')
+    .max(60),
 });
 
 export type ChecklistInput = z.infer<typeof checklistSchema>;

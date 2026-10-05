@@ -1,4 +1,4 @@
-import type { CategoriaFoto, MarcadorAvaria, Severidade } from '@/lib/checklist/etapas';
+import type { ChecklistTipo, MarcadorAvaria, Severidade } from '@/lib/checklist/etapas';
 
 export type FaseEtapa = 'vazia' | 'processando' | 'enviando' | 'enviada' | 'erro';
 
@@ -16,7 +16,11 @@ export interface EtapaState {
   erro?: string;
 }
 
-export type EtapasState = Record<CategoriaFoto, EtapaState>;
+/** Estado de cada item, pelo código do catálogo (checklist_itens.codigo). */
+export type EtapasState = Partial<Record<string, EtapaState>>;
+
+/** Respostas das perguntas Sim/Não (itens condicionais), pelo código do item. */
+export type RespostasState = Partial<Record<string, boolean>>;
 
 export interface VeiculoWizard {
   id: string;
@@ -34,16 +38,24 @@ export interface MotoristaWizard {
   nome: string;
 }
 
+export interface EtapaSalva {
+  fotoPath: string;
+  severidade: Severidade;
+  observacao: string;
+  marcadores: MarcadorAvaria[];
+}
+
 /** Subconjunto persistido em localStorage (sem blobs): permite retomar após o WebView ser recarregado. */
 export interface ChecklistDraft {
   checklistId: string;
+  tipo: ChecklistTipo;
   veiculoId: string;
   motoristaId: string;
   kmAtual: string;
   observacoesGerais: string;
-  passo: number;
-  etapas: Partial<
-    Record<CategoriaFoto, { fotoPath: string; severidade: Severidade; observacao: string; marcadores: MarcadorAvaria[] }>
-  >;
+  /** código do item aberto (ou "identificacao" / "revisao") */
+  passo: string;
+  etapas: Partial<Record<string, EtapaSalva>>;
+  respostas: RespostasState;
   savedAt: number;
 }

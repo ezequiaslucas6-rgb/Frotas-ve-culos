@@ -11,6 +11,7 @@ import { EmptyState, PageHeader } from '@/components/ui/page-header';
 import { AlertaBadge, ChecklistStatusBadge, CnhBadge, SaudeBadge } from '@/components/ui/status-badges';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { requireSession } from '@/lib/auth';
+import { tipoLabel } from '@/lib/checklist/etapas';
 import { addDays, toISODate } from '@/lib/dates';
 import { formatBRL, formatDateTime, formatFilial, formatKm } from '@/lib/format';
 import { avaliarVeiculoPainel } from '@/lib/maintenance/alerts';
@@ -66,7 +67,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   let checklistsMesQ = supabase.from('checklists').select('veiculo_id').gte('data_envio', `${inicioMes}T00:00:00-03:00`);
   let ultimosQ = supabase
     .from('checklists')
-    .select('id, data_envio, status, veiculos(placa, modelo), motoristas(nome)')
+    .select('id, data_envio, tipo, status, veiculos(placa, modelo), motoristas(nome)')
     .order('data_envio', { ascending: false })
     .limit(6);
   if (filialId) {
@@ -321,7 +322,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                       <span className="min-w-0">
                         <span className="font-semibold">{c.veiculos ? formatPlaca(c.veiculos.placa) : '—'}</span>
                         <span className="block truncate text-xs text-muted-foreground">
-                          {c.motoristas?.nome ?? '—'} · {formatDateTime(c.data_envio)}
+                          {tipoLabel(c.tipo)} · {c.motoristas?.nome ?? '—'} · {formatDateTime(c.data_envio)}
                         </span>
                       </span>
                       <ChecklistStatusBadge status={c.status} />

@@ -1,18 +1,19 @@
 'use client';
 
 import { useRef, useState, type ReactNode } from 'react';
-import { AlertTriangle, Camera, CircleCheck, ImageIcon, Loader2, MapPin, OctagonAlert, RefreshCw, RotateCcw, X } from 'lucide-react';
+import { AlertTriangle, Camera, CircleCheck, Loader2, MapPin, OctagonAlert, RefreshCw, RotateCcw, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/input';
-import { SEVERIDADE_LABEL, type EtapaChecklist, type MarcadorAvaria, type Severidade } from '@/lib/checklist/etapas';
+import { SEVERIDADE_LABEL, type MarcadorAvaria, type Severidade } from '@/lib/checklist/etapas';
 import { cn } from '@/lib/utils';
 import type { EtapaState } from './types';
 
 interface EtapaCapturaProps {
-  indice: number;
-  total: number;
-  etapa: EtapaChecklist;
+  /** nome do item (texto alternativo da foto) */
+  titulo: string;
   estado: EtapaState;
+  /** item de avaria (pergunta respondida com "Sim"): só Atenção ou Avaria */
+  somenteProblema?: boolean;
   onFile: (file: File) => void;
   onRetry: () => void;
   onChange: (patch: Partial<Pick<EtapaState, 'severidade' | 'observacao' | 'marcadores'>>) => void;
@@ -26,17 +27,21 @@ const SEVERIDADES: Array<{ value: Severidade; icon: typeof CircleCheck; classes:
   { value: 'critico', icon: OctagonAlert, classes: 'data-[active=true]:border-destructive data-[active=true]:bg-destructive/15 data-[active=true]:text-destructive-text' },
 ];
 
-export function EtapaCaptura({ indice, total, etapa, estado, onFile, onRetry, onChange, children }: EtapaCapturaProps) {
+/**
+ * Captura de uma foto do checklist. Só câmera: não há opção de galeria (e o assistente
+ * ainda recusa arquivos antigos). No APK, o campo com `capture` abre a câmera direto.
+ */
+export function EtapaCaptura({ titulo, estado, somenteProblema = false, onFile, onRetry, onChange, children }: EtapaCapturaProps) {
   const cameraRef = useRef<HTMLInputElement>(null);
-  const galleryRef = useRef<HTMLInputElement>(null);
   const [marcando, setMarcando] = useState(false);
+  const opcoes = somenteProblema ? SEVERIDADES.filter((s) => s.value !== 'ok') : SEVERIDADES;
 
   const ocupado = estado.fase === 'processando' || estado.fase === 'enviando';
   const temFoto = Boolean(estado.previewUrl);
 
   function pick(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
-    event.target.value = ''; // permite escolher/capturar o mesmo arquivo de novo
+    event.target.value = ''; // permite capturar de novo
     if (file) onFile(file);
   }
 
@@ -55,20 +60,9 @@ export function EtapaCaptura({ indice, total, etapa, estado, onFile, onRetry, on
   }
 
   return (
-    <section aria-labelledby="etapa-titulo" className="flex flex-col gap-4">
-      <header>
-        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-          Etapa {indice} de {total}
-        </p>
-        <h2 id="etapa-titulo" className="text-xl font-bold">
-          {etapa.titulo}
-        </h2>
-        <p className="mt-1 text-sm text-muted-foreground">{etapa.dica}</p>
-      </header>
-
-      {/* inputs ocultos: câmera nativa (capture) e galeria */}
-      <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="sr-only" tabIndex={-1} onChange={pick} />
-      <input ref={galleryRef} type="file" accept="image/*" className="sr-only" tabIndex={-1} onChange={pick} />
+    <div className="flex flex-col gap-4">
+      {/* input oculto: só a câmera traseira (capture), sem galeria */}
+      <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="sr-only" tabIndex={-1} onChange={pick} data-testid="camera" />
 
       {!temFoto ? (
         <div className="flex flex-col items-center gap-4 rounded-2xl border-2 border-dashed border-border bg-card px-4 py-10 text-center">
@@ -85,9 +79,7 @@ export function EtapaCaptura({ indice, total, etapa, estado, onFile, onRetry, on
               <Button type="button" size="xl" className="w-full max-w-xs" onClick={() => cameraRef.current?.click()}>
                 <Camera className="size-5" /> Tirar foto
               </Button>
-              <button type="button" onClick={() => galleryRef.current?.click()} className="flex items-center gap-1.5 text-sm text-muted-foreground underline underline-offset-4">
-                <ImageIcon className="size-4" /> Escolher da galeria
-              </button>
+              <p className="text-xs text-muted-foreground">Abre a câmera. Fotos da galeria não são aceitas.</p>
             </>
           )}
           {estado.erro ? (
@@ -109,7 +101,7 @@ export function EtapaCaptura({ indice, total, etapa, estado, onFile, onRetry, on
             onClick={addMarcador}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={estado.previewUrl!} alt={`Foto: ${etapa.titulo}`} className="block max-h-[52dvh] w-auto max-w-full select-none" draggable={false} />
+            <img src={estado.previewUrl!} alt={`Foto: ${titulo}`} className="block max-h-[52dvh] w-auto max-w-full select-none" draggable={false} />
             {estado.marcadores.map((m, i) => (
               <span
                 key={`${m.x}-${m.y}-${i}`}
@@ -189,8 +181,8 @@ export function EtapaCaptura({ indice, total, etapa, estado, onFile, onRetry, on
 
       <fieldset className="flex flex-col gap-2" disabled={!temFoto}>
         <legend className="mb-1 text-sm font-medium">Condição deste item</legend>
-        <div role="radiogroup" aria-label="Condição do item" className="grid grid-cols-3 gap-2">
-          {SEVERIDADES.map(({ value, icon: Icon, classes }) => (
+        <div role="radiogroup" aria-label="Condição do item" className={cn('grid gap-2', somenteProblema ? 'grid-cols-2' : 'grid-cols-3')}>
+          {opcoes.map(({ value, icon: Icon, classes }) => (
             <button
               key={value}
               type="button"
@@ -219,12 +211,12 @@ export function EtapaCaptura({ indice, total, etapa, estado, onFile, onRetry, on
               value={estado.observacao}
               maxLength={1000}
               onChange={(e) => onChange({ observacao: e.target.value })}
-              placeholder="Ex.: pneu dianteiro esquerdo careca; amassado na porta…"
+              placeholder={somenteProblema ? 'Ex.: vazamento de óleo embaixo do motor; amassado na porta…' : 'Ex.: pneu careca; trinca no retrovisor…'}
               aria-invalid={!estado.observacao.trim()}
             />
           </div>
         ) : null}
       </fieldset>
-    </section>
+    </div>
   );
 }

@@ -18,7 +18,9 @@ export function friendlyDbError(error: Pick<PostgrestError, 'code' | 'message' |
     case '23503':
       return 'Não é possível concluir: há registros vinculados (histórico) ou a referência é inválida.';
     case '23514':
-      return 'Algum dos valores informados não é aceito.';
+      // as regras das funções do banco (raise exception) já vêm escritas para o usuário;
+      // só a violação de CHECK traz texto técnico
+      return /check constraint|violates|viola/i.test(error.message) ? 'Algum dos valores informados não é aceito.' : error.message;
     case '42501':
       return 'Você não tem permissão para realizar esta operação.';
     default:

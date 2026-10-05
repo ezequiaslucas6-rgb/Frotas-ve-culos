@@ -12,21 +12,7 @@ type ChecklistStatus = 'ok' | 'atencao' | 'critico';
 type ManutencaoTipo = 'preventiva' | 'corretiva';
 type AlertaStatus = 'ok' | 'proximo' | 'vencido';
 type Combustivel = 'gasolina' | 'gasolina_aditivada' | 'etanol' | 'diesel_s10' | 'diesel_s500' | 'gnv';
-type CategoriaFoto =
-  | 'lateral_direita'
-  | 'lateral_esquerda'
-  | 'frente'
-  | 'traseira'
-  | 'carroceria_portamalas'
-  | 'interior'
-  | 'painel'
-  | 'rodas'
-  | 'nivel_oleo'
-  | 'nivel_agua'
-  | 'motor'
-  | 'retrovisores'
-  | 'para_brisa'
-  | 'luzes_sinalizacao';
+type ChecklistTipo = 'diario' | 'semanal' | 'mensal';
 
 type FilialRow = { id: string; nome_cidade: string; uf: string; created_at: string };
 type ProfileRow = {
@@ -85,11 +71,25 @@ type ChecklistRow = {
   observacoes_gerais: string | null;
   status: ChecklistStatus;
   km_registro: number | null;
+  tipo: ChecklistTipo;
+  /** respostas Sim/Não dos itens condicionais, ex.: { vazamento_avaria: false } */
+  respostas: Json;
 };
+type ChecklistItemRow = {
+  codigo: string;
+  nome: string;
+  grupo: string;
+  instrucao: string | null;
+  pergunta: string | null;
+  ordem: number;
+  condicional: boolean;
+  ativo: boolean;
+};
+type ChecklistModeloRow = { tipo: ChecklistTipo; item: string };
 type ChecklistFotoRow = {
   id: string;
   checklist_id: string;
-  categoria_foto: CategoriaFoto;
+  categoria_foto: string;
   foto_url: string;
   observacao: string | null;
   severidade: ChecklistStatus;
@@ -295,6 +295,26 @@ export type Database = {
           },
         ];
       };
+      checklist_itens: {
+        Row: ChecklistItemRow;
+        Insert: Ins<ChecklistItemRow, 'codigo' | 'nome' | 'grupo' | 'ordem'>;
+        Update: Partial<ChecklistItemRow>;
+        Relationships: [];
+      };
+      checklist_modelo: {
+        Row: ChecklistModeloRow;
+        Insert: ChecklistModeloRow;
+        Update: Partial<ChecklistModeloRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'checklist_modelo_item_fkey';
+            columns: ['item'];
+            isOneToOne: false;
+            referencedRelation: 'checklist_itens';
+            referencedColumns: ['codigo'];
+          },
+        ];
+      };
       abastecimentos: {
         Row: AbastecimentoRow;
         Insert: Ins<AbastecimentoRow, 'veiculo_id' | 'filial_id' | 'km' | 'litros' | 'valor_total' | 'combustivel'>;
@@ -338,13 +358,19 @@ export type Database = {
       salvar_checklist: {
         Args: {
           p_id: string;
+          p_tipo: ChecklistTipo;
           p_veiculo_id: string;
           p_motorista_id: string;
           p_observacoes: string | null;
           p_km: number | null;
           p_fotos: Json;
+          p_respostas?: Json;
         };
         Returns: string;
+      };
+      definir_modelo_checklist: {
+        Args: { p_tipo: ChecklistTipo; p_itens: string[] };
+        Returns: undefined;
       };
       atualizar_meu_perfil: {
         Args: { p_nome: string | null; p_avatar_url: string | null };
@@ -357,7 +383,7 @@ export type Database = {
       checklist_status: ChecklistStatus;
       manutencao_tipo: ManutencaoTipo;
       alerta_status: AlertaStatus;
-      categoria_foto: CategoriaFoto;
+      checklist_tipo: ChecklistTipo;
       combustivel: Combustivel;
     };
     CompositeTypes: { [_ in never]: never };

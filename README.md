@@ -1,6 +1,6 @@
 # Gestão de Frotas
 
-Sistema multi-filial de gestão de frotas: **checklist fotográfico de 14 etapas** (celular), cadastro de motoristas (com
+Sistema multi-filial de gestão de frotas: **checklist fotográfico diário, semanal e mensal** (celular, só câmera), cadastro de motoristas (com
 **CNH completa e imagens**) e veículos, **acesso do motorista pelo celular** com **lançamento de abastecimentos**,
 **alertas de manutenção por KM e por período**, controle de custos (manutenção + combustível) e painel executivo.
 
@@ -18,8 +18,11 @@ roda na **sua VPS** em Docker, atrás do Nginx, num subdomínio com HTTPS.
    2. `20260102000000_rascunhos.sql`
    3. `20260103000000_papel_motorista.sql` (uma linha só; precisa rodar **sozinho**, antes do próximo)
    4. `20260103000100_motoristas_acesso.sql`
+   5. `20260105000000_checklist_tipos.sql` (checklists diário/semanal/mensal)
 
-   **Já tinha o sistema instalado?** Rode apenas os itens 3 e 4 (nessa ordem, separados) e depois atualize o app na VPS.
+   **Já tinha o sistema instalado?** Rode apenas o que ainda não rodou (nessa ordem, separados) e depois atualize o
+   app na VPS. Quem já está com os itens 1–4 roda só o item 5: os checklists antigos viram "diário" e continuam
+   com as fotos.
 2. Execute `supabase/seed.sql` (filiais de exemplo).
 3. **Primeiro Administrador Geral (obrigatório).** Crie o usuário em *Authentication → Users → Add user* (marque
    *Auto Confirm User*) e vincule-o como admin:
@@ -161,10 +164,21 @@ por tela. Com as [chaves de assinatura assimétricas](https://supabase.com/docs/
 validado na própria VPS, sem essa ida. O `deploy/diagnostico.sh` mostra qual é o seu caso e a distância VPS → Supabase
 (o ideal é o projeto Supabase na mesma região da VPS).
 
-## Checklist de 14 etapas
-Câmera nativa do celular, **compressão no aparelho** (fotos de 3–12 MB viram ~300 KB), upload direto ao Storage etapa a etapa
-com novas tentativas, **pins de avaria tocando na foto**, status geral em tempo real e rascunho que sobrevive ao recarregar a
-página. O envio final é uma RPC atômica (`salvar_checklist`) que grava checklist + 14 fotos + KM numa transação.
+## Checklist diário, semanal e mensal
+| Tipo | Fotos (padrão) |
+|---|---|
+| **Diário** | Exterior (frente, traseira, 2 laterais) · **Pneus** (os 4) · **Retrovisores** (os 2) · **Motor e fluidos** (óleo, fluido de freio, água do arrefecimento) · Cabine (painel com KM, **bancos**) — 15 fotos |
+| **Semanal** | Diário + luzes, para-brisa, estepe, carroceria/porta-malas — 19 fotos |
+| **Mensal** | Semanal + compartimento do motor, equipamentos obrigatórios — 21 fotos |
+
+Em todos os tipos: **"O veículo tem algum vazamento ou avaria?" Sim/Não** — no "Sim" a foto (com Atenção/Avaria e
+descrição) passa a ser obrigatória. O Administrador Geral ajusta o que cada tipo exige em **Checklists → Modelos**.
+
+Só câmera: não existe opção de galeria (no APK o campo abre a câmera direto) e fotos antigas são recusadas.
+**Compressão no aparelho** (fotos de 3–12 MB viram ~300 KB), upload direto ao Storage item a item com novas tentativas,
+**pins de avaria tocando na foto**, status geral em tempo real e rascunho que sobrevive ao recarregar a página. O envio
+final é uma RPC atômica (`salvar_checklist`) que confere as fotos com o modelo do tipo e grava checklist + fotos + KM
+numa transação.
 
 ## Alertas de manutenção
 | Nível | Regra (vale o pior entre KM e período) |
@@ -177,7 +191,9 @@ Semáforo: 🔴 Manutenção/Avaria · 🟡 Atenção · 🟢 Liberado (detalhes
 ## Limites conhecidos
 - Fotos de checklists abandonados, cupons trocados antes do envio e fotos de perfil antigas ficam no Storage
   (usuários não excluem arquivos); um job de limpeza pode vir depois.
-- O checklist de 14 fotos continua sendo feito pelo supervisor; o motorista não registra checklists.
+- O checklist continua sendo feito pelo supervisor; o motorista não registra checklists.
+- Mudar um modelo vale para os próximos checklists; um rascunho em andamento usa o modelo da hora em que a
+  tela foi aberta (se o modelo mudar no meio, o envio avisa qual foto falta).
 - Os caches de perfil e de URLs assinadas ficam na memória do container (um único processo, como na VPS); ao reiniciar,
   recomeçam vazios. Fotos de veículos enviadas antes desta versão não têm miniatura: a lista usa a foto completa até
   ela ser trocada.

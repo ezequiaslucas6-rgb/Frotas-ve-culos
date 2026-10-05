@@ -1,25 +1,70 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CHECKLIST_ETAPAS,
-  TOTAL_ETAPAS,
+  agruparItens,
   calcularStatusChecklist,
-  caminhoFotoChecklist,
   contarSeveridades,
+  fotoRecente,
+  fotosEsperadas,
+  totalFotosObrigatorias,
+  type ItemChecklist,
 } from './etapas';
 
-describe('etapas do checklist', () => {
-  it('são 14 etapas com categorias únicas', () => {
-    expect(TOTAL_ETAPAS).toBe(14);
-    expect(new Set(CHECKLIST_ETAPAS.map((e) => e.categoria)).size).toBe(14);
+const item = (codigo: string, grupo: string, ordem: number, condicional = false): ItemChecklist => ({
+  codigo,
+  nome: codigo,
+  grupo,
+  instrucao: null,
+  pergunta: condicional ? `${codigo}?` : null,
+  ordem,
+  condicional,
+});
+
+const ITENS = [
+  item('pneu_traseiro', 'Pneus', 230),
+  item('frente', 'Exterior', 110),
+  item('vazamento_avaria', 'Avarias', 610, true),
+  item('pneu_dianteiro', 'Pneus', 210),
+  item('traseira', 'Exterior', 120),
+];
+
+describe('agruparItens', () => {
+  it('agrupa na ordem dos itens e mantém a ordem dentro do grupo', () => {
+    expect(agruparItens(ITENS).map((g) => [g.grupo, g.itens.map((i) => i.codigo)])).toEqual([
+      ['Exterior', ['frente', 'traseira']],
+      ['Pneus', ['pneu_dianteiro', 'pneu_traseiro']],
+      ['Avarias', ['vazamento_avaria']],
+    ]);
   });
-  it('a pior severidade define o status geral', () => {
+});
+
+describe('fotosEsperadas (mesma regra da RPC)', () => {
+  it('pergunta Sim/Não: a foto só entra com "Sim"', () => {
+    expect(fotosEsperadas(ITENS, {})).toEqual(['frente', 'traseira', 'pneu_dianteiro', 'pneu_traseiro']);
+    expect(fotosEsperadas(ITENS, { vazamento_avaria: false })).toHaveLength(4);
+    expect(fotosEsperadas(ITENS, { vazamento_avaria: true })).toEqual([
+      'frente', 'traseira', 'pneu_dianteiro', 'pneu_traseiro', 'vazamento_avaria',
+    ]);
+    expect(totalFotosObrigatorias(ITENS)).toBe(4);
+  });
+});
+
+describe('fotoRecente (só câmera)', () => {
+  const agora = Date.UTC(2026, 9, 5, 12);
+  it('aceita foto tirada agora e recusa foto antiga de galeria', () => {
+    expect(fotoRecente(agora - 5_000, agora)).toBe(true);
+    expect(fotoRecente(agora - 60 * 60 * 1000, agora)).toBe(false);
+  });
+  it('aceita quando o navegador não informa a data', () => {
+    expect(fotoRecente(0, agora)).toBe(true);
+    expect(fotoRecente(Number.NaN, agora)).toBe(true);
+  });
+});
+
+describe('status do checklist', () => {
+  it('é a pior severidade e conta cada uma', () => {
     expect(calcularStatusChecklist([])).toBe('ok');
-    expect(calcularStatusChecklist(['ok', 'ok'])).toBe('ok');
-    expect(calcularStatusChecklist(['ok', 'atencao'])).toBe('atencao');
-    expect(calcularStatusChecklist(['atencao', 'critico', 'ok'])).toBe('critico');
-  });
-  it('conta severidades e monta o caminho no Storage', () => {
-    expect(contarSeveridades(['ok', 'atencao', 'ok', 'critico'])).toEqual({ ok: 2, atencao: 1, critico: 1 });
-    expect(caminhoFotoChecklist('f1', 'c1', 'motor')).toBe('f1/c1/motor.jpg');
+    expect(calcularStatusChecklist(['ok', 'atencao', 'ok'])).toBe('atencao');
+    expect(calcularStatusChecklist(['atencao', 'critico'])).toBe('critico');
+    expect(contarSeveridades(['ok', 'ok', 'critico'])).toEqual({ ok: 2, atencao: 0, critico: 1 });
   });
 });

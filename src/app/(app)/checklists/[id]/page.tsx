@@ -1,16 +1,17 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ExternalLink, Gauge, MessageCircle, Truck, User, UserCheck } from 'lucide-react';
+import { CircleCheck, ExternalLink, Gauge, MessageCircle, Truck, User, UserCheck } from 'lucide-react';
 import { excluirChecklist } from '@/actions/checklists';
 import { FotoComMarcadores, parseMarcadores } from '@/components/checklist/foto-com-marcadores';
 import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { DeleteButton } from '@/components/ui/delete-button';
 import { PageHeader } from '@/components/ui/page-header';
-import { ChecklistStatusBadge } from '@/components/ui/status-badges';
+import { ChecklistStatusBadge, ChecklistTipoBadge } from '@/components/ui/status-badges';
 import { requireSession } from '@/lib/auth';
-import { CHECKLIST_ETAPAS } from '@/lib/checklist/etapas';
+import { agruparItens, tipoLabel, type ItemChecklist } from '@/lib/checklist/etapas';
+import { carregarModelos } from '@/lib/checklist/modelos';
 import { formatDateTime, formatFilial, formatKm } from '@/lib/format';
 import { signedUrlMap } from '@/lib/storage';
 import { formatPlaca, whatsappLink } from '@/lib/validators/documentos';
@@ -21,27 +22,45 @@ export default async function ChecklistPage({ params }: { params: Promise<{ id: 
   const { id } = await params;
   const { supabase, isAdmin } = await requireSession();
 
-  const { data: checklist } = await supabase
-    .from('checklists')
-    .select(
-      '*, veiculos(id, placa, marca, modelo), motoristas(nome, whatsapp), filiais(nome_cidade, uf), profiles(nome), checklist_fotos(categoria_foto, foto_url, observacao, severidade, marcadores)',
-    )
-    .eq('id', id)
-    .maybeSingle();
+  const [{ data: checklist }, { catalogo }] = await Promise.all([
+    supabase
+      .from('checklists')
+      .select(
+        '*, veiculos(id, placa, marca, modelo), motoristas(nome, whatsapp), filiais(nome_cidade, uf), profiles(nome), checklist_fotos(categoria_foto, foto_url, observacao, severidade, marcadores)',
+      )
+      .eq('id', id)
+      .maybeSingle(),
+    carregarModelos(supabase),
+  ]);
   if (!checklist) notFound();
 
   const fotos = checklist.checklist_fotos ?? [];
   const urls = await signedUrlMap(supabase, 'checklists', fotos.map((f) => f.foto_url));
-  const porCategoria = new Map(fotos.map((f) => [f.categoria_foto, f]));
   const comProblema = fotos.filter((f) => f.severidade !== 'ok').length;
+
+  // fotos + perguntas Sim/Não, agrupadas como no assistente (o catálogo inclui itens antigos)
+  const porCodigo = new Map(catalogo.map((i) => [i.codigo, i]));
+  const itemDe = (codigo: string): ItemChecklist =>
+    porCodigo.get(codigo) ?? { codigo, nome: codigo, grupo: 'Outros', instrucao: null, pergunta: null, ordem: 9999, condicional: false };
+  const respostas =
+    checklist.respostas && typeof checklist.respostas === 'object' && !Array.isArray(checklist.respostas) ? checklist.respostas : {};
+  const entradas = [
+    ...fotos.map((foto) => ({ ...itemDe(foto.categoria_foto), foto, resposta: respostas[foto.categoria_foto] })),
+    // "Não" na pergunta: não há foto, mas a resposta aparece no grupo
+    ...Object.entries(respostas)
+      .filter(([codigo, valor]) => valor === false && !fotos.some((f) => f.categoria_foto === codigo))
+      .map(([codigo]) => ({ ...itemDe(codigo), foto: null, resposta: false as const })),
+  ];
+  const grupos = agruparItens(entradas);
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title={`Checklist · ${checklist.veiculos ? formatPlaca(checklist.veiculos.placa) : ''}`}
+        title={`Checklist ${tipoLabel(checklist.tipo).toLowerCase()} · ${checklist.veiculos ? formatPlaca(checklist.veiculos.placa) : ''}`}
         description={formatDateTime(checklist.data_envio)}
         actions={
           <>
+            <ChecklistTipoBadge tipo={checklist.tipo} />
             <ChecklistStatusBadge status={checklist.status} />
             {checklist.veiculos ? (
               <Link href={`/veiculos/${checklist.veiculos.id}`} className={buttonVariants({ variant: 'outline' })}>
@@ -101,39 +120,57 @@ export default async function ChecklistPage({ params }: { params: Promise<{ id: 
         </CardContent>
       </Card>
 
-      <ul className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {CHECKLIST_ETAPAS.map((etapa, i) => {
-          const foto = porCategoria.get(etapa.categoria);
-          const url = foto ? urls[foto.foto_url] : undefined;
-          return (
-            <li key={etapa.categoria}>
-              <Card className="h-full gap-3 py-4">
-                <CardContent className="flex flex-col gap-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="font-semibold">
-                      {i + 1}. {etapa.titulo}
-                    </p>
-                    {foto ? <ChecklistStatusBadge status={foto.severidade} /> : null}
-                  </div>
-                  {foto && url ? (
-                    <>
-                      <FotoComMarcadores src={url} alt={etapa.titulo} marcadores={parseMarcadores(foto.marcadores)} />
-                      <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex w-fit items-center gap-1 text-xs text-muted-foreground hover:underline">
-                        Abrir original <ExternalLink className="size-3" />
-                      </a>
-                    </>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">Foto indisponível.</p>
-                  )}
-                  {foto?.observacao ? (
-                    <p className="rounded-lg bg-muted px-3 py-2 text-sm">{foto.observacao}</p>
-                  ) : null}
-                </CardContent>
-              </Card>
-            </li>
-          );
-        })}
-      </ul>
+      {grupos.map((g) => (
+        <section key={g.grupo} className="flex flex-col gap-3" aria-labelledby={`grupo-${g.grupo}`}>
+          <h2 id={`grupo-${g.grupo}`} className="flex items-center gap-2 text-lg font-semibold">
+            {g.grupo}
+            <span className="text-sm font-normal text-muted-foreground">
+              {g.itens.filter((i) => i.foto).length} foto(s)
+            </span>
+          </h2>
+          <ul className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {g.itens.map((item) => {
+              const foto = item.foto;
+              const url = foto ? urls[foto.foto_url] : undefined;
+              return (
+                <li key={item.codigo}>
+                  <Card className="h-full gap-3 py-4">
+                    <CardContent className="flex flex-col gap-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="font-semibold">{item.nome}</p>
+                        {foto ? <ChecklistStatusBadge status={foto.severidade} /> : null}
+                      </div>
+                      {item.pergunta && typeof item.resposta === 'boolean' ? (
+                        <p className="text-sm">
+                          <span className="text-muted-foreground">{item.pergunta}</span>{' '}
+                          <span className={item.resposta ? 'font-semibold text-destructive-text' : 'font-semibold text-success-text'}>
+                            {item.resposta ? 'Sim' : 'Não'}
+                          </span>
+                        </p>
+                      ) : null}
+                      {foto && url ? (
+                        <>
+                          <FotoComMarcadores src={url} alt={item.nome} marcadores={parseMarcadores(foto.marcadores)} />
+                          <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex w-fit items-center gap-1 text-xs text-muted-foreground hover:underline">
+                            Abrir original <ExternalLink className="size-3" />
+                          </a>
+                        </>
+                      ) : foto ? (
+                        <p className="text-sm text-muted-foreground">Foto indisponível.</p>
+                      ) : (
+                        <p className="flex items-center gap-1.5 text-sm text-success-text">
+                          <CircleCheck className="size-4" /> Sem vazamento ou avaria.
+                        </p>
+                      )}
+                      {foto?.observacao ? <p className="rounded-lg bg-muted px-3 py-2 text-sm">{foto.observacao}</p> : null}
+                    </CardContent>
+                  </Card>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))}
     </div>
   );
 }

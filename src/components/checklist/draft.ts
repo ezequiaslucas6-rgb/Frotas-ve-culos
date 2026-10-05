@@ -1,6 +1,7 @@
 import type { ChecklistDraft } from './types';
 
-const KEY = (userId: string) => `frota:checklist-draft:v1:${userId}`;
+// v2: checklist com tipo (diário/semanal/mensal), itens pelo código do catálogo e respostas Sim/Não
+const KEY = (userId: string) => `frota:checklist-draft:v2:${userId}`;
 const MAX_AGE_MS = 48 * 60 * 60 * 1000;
 
 /**
@@ -23,8 +24,8 @@ export function parseDraft(raw: string | null): ChecklistDraft | null {
   if (!raw) return null;
   try {
     const draft = JSON.parse(raw) as ChecklistDraft;
-    if (!draft?.checklistId || !draft.etapas || Date.now() - draft.savedAt > MAX_AGE_MS) return null;
-    return draft;
+    if (!draft?.checklistId || !draft.tipo || !draft.etapas || Date.now() - draft.savedAt > MAX_AGE_MS) return null;
+    return { ...draft, respostas: draft.respostas ?? {}, passo: String(draft.passo ?? '') };
   } catch {
     return null;
   }
@@ -47,6 +48,7 @@ export function saveDraft(userId: string, draft: ChecklistDraft) {
 export function clearDraft(userId: string) {
   try {
     window.localStorage.removeItem(KEY(userId));
+    window.localStorage.removeItem(`frota:checklist-draft:v1:${userId}`); // formato anterior (14 etapas fixas)
   } catch {
     /* noop */
   }
