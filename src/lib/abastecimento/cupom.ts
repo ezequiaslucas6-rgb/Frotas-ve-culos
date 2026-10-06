@@ -23,8 +23,10 @@ export interface LeituraCupom {
   preco_unitario: number | null;
   /** valor do item combustível, antes do desconto */
   valor_item: number | null;
-  /** desconto impresso na linha do combustível */
+  /** desconto impresso na linha do combustível (em reais, nunca a porcentagem) */
   desconto_item: number | null;
+  /** valor líquido impresso na linha do combustível (já com desconto) */
+  valor_liquido_item: number | null;
   /** totais da nota inteira */
   valor_total_nota: number | null;
   desconto_nota: number | null;
@@ -89,56 +91,114 @@ export function calcularValores({ litros, valorBruto, desconto }: { litros?: num
 const perto = (a: number, b: number, tolerancia: number) => Math.abs(a - b) <= tolerancia + 1e-9;
 const positivo = (v: number | null | undefined): v is number => v != null && Number.isFinite(v) && v > 0;
 
+const litrosFmt = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 });
+
+type OrigemDesconto = 'item' | 'nota' | 'proporcional' | 'diferenca';
+
 export function calcularCupom(l: LeituraCupom): CalculoCupom {
   const avisos: string[] = [];
   const conferencias: Conferencia[] = [];
-  const litros = positivo(l.litros) ? l.litros : null;
+  const preco = positivo(l.preco_unitario) ? l.preco_unitario : null;
+  const liquidoItem = positivo(l.valor_liquido_item) ? l.valor_liquido_item : null;
+  const descontoItem = l.desconto_item != null && l.desconto_item >= 0 ? l.desconto_item : null;
+  const aPagar = !l.outros_itens && positivo(l.valor_a_pagar) ? l.valor_a_pagar : null;
+  const acrescimo = !l.outros_itens && positivo(l.acrescimo_nota) ? l.acrescimo_nota : 0;
+  /** o que o cupom diz que foi pago pelo combustível (para conferir as contas) */
+  const liquidoImpresso = liquidoItem ?? (aPagar != null ? aPagar - acrescimo : null);
+  const descontoImpresso = descontoItem ?? (!l.outros_itens && l.desconto_nota != null && l.desconto_nota > 0 ? l.desconto_nota : null);
+  let litros = positivo(l.litros) ? l.litros : null;
+  const tolerancia = (v: number) => Math.max(0.02, v * 0.002);
 
-  // valor do combustível antes do desconto
+  // 1. valor do combustível antes do desconto
   let valorBruto: number | null = null;
-  const brutoLido = positivo(l.valor_item) || (!l.outros_itens && positivo(l.valor_total_nota));
+  let brutoDeLitros = false;
   if (positivo(l.valor_item)) valorBruto = l.valor_item;
   else if (!l.outros_itens && positivo(l.valor_total_nota)) valorBruto = l.valor_total_nota;
-  else if (litros && positivo(l.preco_unitario)) {
-    valorBruto = arred2(litros * l.preco_unitario);
+  else if (liquidoItem && descontoItem != null) {
+    valorBruto = arred2(liquidoItem + descontoItem);
+    avisos.push('O valor total do combustível não aparece: calculado pelo valor líquido + desconto da linha.');
+  }
+
+  // 1a. a quantidade às vezes sai com ponto no lugar da vírgula ("5.413 LT" = 5,413 L)
+  if (litros && preco && valorBruto && !perto(litros * preco, valorBruto, tolerancia(valorBruto))) {
+    for (const divisor of [1000, 10_000]) {
+      if (perto((litros / divisor) * preco, valorBruto, tolerancia(valorBruto))) {
+        litros = arred3(litros / divisor);
+        avisos.push(`Quantidade lida como ${litrosFmt.format(litros)} L: o cupom usa ponto no lugar da vírgula.`);
+        break;
+      }
+    }
+  }
+
+  // 1b. DANFE: "valor total da nota" já é com desconto; o valor antes do desconto é o dos produtos
+  if (valorBruto && litros && preco && descontoImpresso && liquidoImpresso && perto(valorBruto, liquidoImpresso, 0.02)) {
+    const semDesconto = liquidoImpresso + descontoImpresso;
+    if (perto(litros * preco, semDesconto, tolerancia(semDesconto))) {
+      valorBruto = arred2(semDesconto);
+      avisos.push('O valor total lido já era o valor com desconto: usado o valor antes do desconto (litros × preço da bomba).');
+    }
+  }
+
+  if (!valorBruto && litros && preco) {
+    valorBruto = arred2(litros * preco);
+    brutoDeLitros = true;
     avisos.push('O valor total do combustível não aparece no cupom: calculado por litros × preço da bomba.');
   }
 
-  // desconto do combustível
-  let desconto = 0;
-  if (l.desconto_item != null && l.desconto_item >= 0) {
-    desconto = l.desconto_item;
-  } else if (l.desconto_nota != null && l.desconto_nota > 0) {
-    if (!l.outros_itens) desconto = l.desconto_nota;
+  // 2. desconto: o impresso que fecha com o valor líquido / a pagar; sem desconto impresso, a diferença
+  const impressos: Array<{ valor: number; origem: OrigemDesconto }> = [];
+  if (descontoItem != null) impressos.push({ valor: descontoItem, origem: 'item' });
+  if (l.desconto_nota != null && l.desconto_nota >= 0) {
+    if (!l.outros_itens) impressos.push({ valor: l.desconto_nota, origem: 'nota' });
     else if (valorBruto && positivo(l.valor_total_nota)) {
-      desconto = arred2((l.desconto_nota * valorBruto) / l.valor_total_nota);
-      avisos.push('O desconto é da nota inteira (há outros produtos): foi dividido proporcionalmente ao valor do combustível.');
+      impressos.push({ valor: arred2((l.desconto_nota * valorBruto) / l.valor_total_nota), origem: 'proporcional' });
     }
-  } else if (!l.outros_itens && valorBruto && positivo(l.valor_a_pagar) && l.valor_a_pagar < valorBruto - 0.009 && !positivo(l.acrescimo_nota)) {
-    desconto = arred2(valorBruto - l.valor_a_pagar);
-    avisos.push('O desconto não aparece escrito: calculado pela diferença entre o valor total e o valor a pagar.');
   }
+  const fecha = (d: number) => valorBruto != null && liquidoImpresso != null && perto(valorBruto - d, liquidoImpresso, 0.02);
+  let escolhido = liquidoImpresso != null ? impressos.find((c) => fecha(c.valor)) : undefined;
+  if (escolhido && impressos[0] && escolhido !== impressos[0] && impressos[0].valor !== escolhido.valor) {
+    avisos.push(`O desconto lido na linha (${brl(impressos[0].valor)}) não fecha com o valor pago: usado ${brl(escolhido.valor)}.`);
+  }
+  escolhido ??= impressos[0];
+  if (!escolhido && valorBruto && liquidoImpresso != null && liquidoImpresso < valorBruto - 0.009) {
+    escolhido = { valor: arred2(valorBruto - liquidoImpresso), origem: 'diferenca' };
+    avisos.push('O desconto não aparece escrito: calculado pela diferença entre o valor total e o valor pago.');
+  }
+  if (escolhido?.origem === 'proporcional') {
+    avisos.push('O desconto é da nota inteira (há outros produtos): foi dividido proporcionalmente ao valor do combustível.');
+  }
+  const desconto = escolhido?.valor ?? 0;
 
-  const { valorLiquido, unitarioComDesconto, precoBomba: precoCalculado } = calcularValores({ litros, valorBruto, desconto });
-  const precoBomba = positivo(l.preco_unitario) ? l.preco_unitario : precoCalculado;
+  let { valorLiquido, unitarioComDesconto, precoBomba: precoCalculado } = calcularValores({ litros, valorBruto, desconto });
 
-  // conferência 1: litros × preço da bomba = valor total (a nota arredonda/trunca o item em centavos)
-  if (litros && positivo(l.preco_unitario) && valorBruto && brutoLido) {
-    const esperado = litros * l.preco_unitario;
+  // sem preço da bomba para conferir: quantidade 1.000× maior aparece no preço por litro absurdo
+  if (litros && !preco && unitarioComDesconto && unitarioComDesconto < PRECO_MIN && valorLiquido) {
+    const corrigido = arred3(litros / 1000);
+    const unit = valorLiquido / corrigido;
+    if (unit >= PRECO_MIN && unit <= PRECO_MAX) {
+      litros = corrigido;
+      avisos.push(`Quantidade lida como ${litrosFmt.format(litros)} L: o cupom usa ponto no lugar da vírgula.`);
+      ({ valorLiquido, unitarioComDesconto, precoBomba: precoCalculado } = calcularValores({ litros, valorBruto, desconto }));
+    }
+  }
+  const precoBomba = preco ?? precoCalculado;
+
+  // 3. conferências com os próprios números do cupom
+  if (litros && preco && valorBruto && !brutoDeLitros) {
+    const esperado = litros * preco;
     conferencias.push(
-      perto(esperado, valorBruto, Math.max(0.02, valorBruto * 0.002))
+      perto(esperado, valorBruto, tolerancia(valorBruto))
         ? { ok: true, texto: 'Litros × preço da bomba = valor total' }
         : { ok: false, texto: `Litros × preço da bomba dá ${brl(arred2(esperado))}, mas o valor total lido é ${brl(valorBruto)}` },
     );
   }
-
-  // conferência 2: valor total − desconto (+ acréscimo) = valor a pagar
-  if (!l.outros_itens && valorBruto && positivo(l.valor_a_pagar)) {
-    const esperado = valorBruto - desconto + (positivo(l.acrescimo_nota) ? l.acrescimo_nota : 0);
+  if (valorBruto && liquidoImpresso != null) {
+    const esperado = valorBruto - desconto;
+    const rotulo = liquidoItem ? 'valor líquido' : 'valor a pagar';
     conferencias.push(
-      perto(esperado, l.valor_a_pagar, 0.02)
-        ? { ok: true, texto: 'Valor total − desconto = valor a pagar' }
-        : { ok: false, texto: `Valor total − desconto dá ${brl(arred2(esperado))}, mas o valor a pagar lido é ${brl(l.valor_a_pagar)}` },
+      perto(esperado, liquidoImpresso, 0.02)
+        ? { ok: true, texto: `Valor total − desconto = ${rotulo}` }
+        : { ok: false, texto: `Valor total − desconto dá ${brl(arred2(esperado))}, mas o ${rotulo} lido é ${brl(liquidoImpresso)}` },
     );
   }
 
@@ -166,6 +226,21 @@ export function calcularCupom(l: LeituraCupom): CalculoCupom {
   };
 }
 
+const placaLimpa = (p: string) => p.toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+/**
+ * Placa impressa no cupom (notas de convênio/frota) x veículo do lançamento. Diferente é sinal
+ * de abastecimento de outro veículo (ou desvio): o resumo pede conferência.
+ */
+export function conferirPlaca(placaCupom: string | null, placaVeiculo: string): Conferencia | null {
+  if (!placaCupom) return null;
+  const cupom = placaLimpa(placaCupom);
+  const veiculo = placaLimpa(placaVeiculo);
+  return cupom === veiculo
+    ? { ok: true, texto: `Placa do cupom = veículo escolhido (${veiculo})` }
+    : { ok: false, texto: `A placa no cupom é ${cupom}, mas o veículo escolhido é ${veiculo}: confira se o abastecimento é deste veículo` };
+}
+
 /** Número no formato dos campos do formulário ("45,320"). */
 export const paraCampo = (v: number, casas = 2) => v.toFixed(casas).replace('.', ',');
 
@@ -177,6 +252,14 @@ export const COMBUSTIVEIS_CUPOM = [...COMBUSTIVEIS.map((c) => c.value), 'outro']
  * ---------------------------------------------------------------------------------------- */
 const numero = z
   .preprocess((v) => (v === '' || v == null ? null : parseDecimalBR(v)), z.number().finite().nonnegative().nullable())
+  .catch(null);
+/** desconto vem impresso com sinal ("-2,27"): vale o valor */
+const valorDesconto = z
+  .preprocess((v) => {
+    if (v === '' || v == null) return null;
+    const n = parseDecimalBR(v);
+    return typeof n === 'number' && Number.isFinite(n) ? Math.abs(n) : n;
+  }, z.number().finite().nonnegative().nullable())
   .catch(null);
 const texto = (max: number) =>
   z
@@ -190,9 +273,10 @@ export const leituraCupomSchema = z.object({
   litros: numero,
   preco_unitario: numero,
   valor_item: numero,
-  desconto_item: numero,
+  desconto_item: valorDesconto,
+  valor_liquido_item: numero,
   valor_total_nota: numero,
-  desconto_nota: numero,
+  desconto_nota: valorDesconto,
   acrescimo_nota: numero,
   valor_a_pagar: numero,
   outros_itens: z.boolean().catch(false),
@@ -203,9 +287,19 @@ export const leituraCupomSchema = z.object({
     .catch(null),
   posto: texto(120),
   cnpj: texto(20),
-  placa: texto(10),
+  // placa só com letras e números, em maiúsculas ("RSV-2A77" -> "RSV2A77")
+  placa: z
+    .preprocess((v) => {
+      const p = typeof v === 'string' ? v.toUpperCase().replace(/[^A-Z0-9]/g, '') : '';
+      return p.length >= 6 && p.length <= 8 ? p : null;
+    }, z.string().nullable())
+    .catch(null),
+  // "KM: 0" = não informado
   km: z
-    .preprocess((v) => (v === '' || v == null ? null : parseDecimalBR(v)), z.number().int().nonnegative().nullable())
+    .preprocess((v) => {
+      const n = v === '' || v == null ? null : parseDecimalBR(v);
+      return typeof n === 'number' && n > 0 ? n : null;
+    }, z.number().int().positive().nullable())
     .catch(null),
   observacao: texto(300),
 }) satisfies z.ZodType<LeituraCupom>;

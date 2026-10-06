@@ -15,7 +15,7 @@ import { FormMessage, SubmitButton } from '@/components/ui/form-feedback';
 import { Input, Select, Textarea } from '@/components/ui/input';
 import { useServerForm } from '@/hooks/use-server-form';
 import { COMBUSTIVEIS, formatPrecoLitro, parseDecimalBR, type Combustivel } from '@/lib/abastecimento/consumo';
-import { calcularValores, paraCampo, type RegistroLeitura } from '@/lib/abastecimento/cupom';
+import { calcularValores, conferirPlaca, paraCampo, type RegistroLeitura } from '@/lib/abastecimento/cupom';
 import { addDays } from '@/lib/dates';
 import { formatBRL, formatKm, formatNumber } from '@/lib/format';
 import { formatPlaca } from '@/lib/validators/documentos';
@@ -90,8 +90,11 @@ export function AbastecimentoForm({ veiculos, motoristas, veiculoInicial, combus
     }
 
     // preenche os campos com o que foi lido (a pessoa confere e corrige antes de registrar)
-    const { calculo: c, registro: reg } = r;
+    const { registro: reg } = r;
     const l = reg.leitura;
+    // placa impressa (notas de convênio) tem de ser a do veículo escolhido
+    const placa = conferirPlaca(l.placa, veiculo.placa);
+    const c = placa ? { ...r.calculo, conferencias: [...r.calculo.conferencias, placa], confiavel: r.calculo.confiavel && placa.ok } : r.calculo;
     const preenchidos: string[] = [];
     if (c.litros) {
       setLitros(paraCampo(c.litros, 3));
@@ -189,7 +192,8 @@ export function AbastecimentoForm({ veiculos, motoristas, veiculoInicial, combus
               bucket="abastecimentos"
               pasta={veiculo ? `${veiculo.filial_id}/${veiculo.id}` : null}
               arquivo="cupom"
-              maxDimension={2200}
+              // folha A4 (DANFE) tem letra miúda: mais resolução que as outras fotos
+              maxDimension={2600}
               digitalizar
               semPastaMsg="Selecione o veículo antes de enviar o comprovante."
               accept="image/*"

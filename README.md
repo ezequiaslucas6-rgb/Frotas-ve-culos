@@ -165,6 +165,12 @@ valor total, desconto, combustível, data e posto. A pessoa confere e registra.
   resumo mostra **Confira** e o motivo; se tudo bate, **Conferido**.
 - Nota com outros produtos (ARLA, óleo…): usa a linha do combustível; desconto só da nota inteira é dividido
   proporcionalmente, com aviso.
+- Modelos ajustados com notas reais da frota: **NFC-e** (sistema xpert: quantidade impressa com ponto, "5.413 LT" =
+  5,413 L; desconto e valor líquido na linha do item) e **DANFE A4** ("VALOR TOTAL DOS PRODUTOS" antes do desconto,
+  "VALOR TOTAL DA NOTA" já com desconto, "% DESCONTO" é porcentagem). Se a leitura trocar esses campos, o cálculo
+  percebe pelas conferências e corrige, com aviso.
+- **Placa e KM impressos** (notas de convênio/frota): o KM preenche o hodômetro e a placa é comparada com o veículo
+  escolhido; placa diferente pede conferência (abastecimento de outro veículo ou desvio).
 - O que foi lido fica gravado no lançamento (`leitura_cupom`) para conferência.
 - **Chave gratuita:** crie em [aistudio.google.com/apikey](https://aistudio.google.com/apikey), coloque em
   `GEMINI_API_KEY` no `/opt/frotas/.env` da VPS e rode o instalador. A chave fica só no servidor.
@@ -176,7 +182,7 @@ valor total, desconto, combustível, data e posto. A pessoa confere e registra.
 - **Testar leitura de cupons** (Administrador Geral, em Abastecimentos): envie fotos de vários modelos de nota e
   veja o que é lido em cada uma, sem lançar nada (as fotos são apagadas depois). *Copiar resultados* gera um
   resumo para ajustar as instruções da leitura (`src/lib/abastecimento/prompt-cupom.ts`) a um modelo novo.
-- Limites: 6 leituras por minuto e 80 por dia por usuário (protege a cota gratuita).
+- Limites: 10 leituras por minuto e 80 por dia por usuário (protege a cota gratuita).
 
 **Consumo fora do padrão.** Cada ciclo (tanque cheio a tanque cheio) é comparado com a média dos até 5 ciclos normais
 anteriores do mesmo veículo e combustível (precisa de pelo menos 2):

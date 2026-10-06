@@ -12,7 +12,7 @@ export type ResultadoLeituraCupom =
   | { ok: true; registro: RegistroLeitura; calculo: CalculoCupom }
   | { ok: false; codigo: string; mensagem: string };
 
-const limitador = criarLimitador({ porMinuto: 6, porDia: 80 });
+const limitador = criarLimitador({ porMinuto: 10, porDia: 80 });
 const limitadorTeste = criarLimitador({ porMinuto: 10, porDia: 150 });
 const cache = criarCache<ResultadoLeituraCupom>({ validadeMs: 60 * 60 * 1000, maximo: 300 });
 

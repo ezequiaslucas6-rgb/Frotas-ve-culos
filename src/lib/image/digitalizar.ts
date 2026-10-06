@@ -50,24 +50,58 @@ export function limiarOtsu(lum: Uint8Array): { limiar: number; separacao: number
   return { limiar: melhor.limiar, separacao: melhor.separacao };
 }
 
-/** Maior sequência contínua de posições com fração >= mínimo. */
-function maiorTrecho(fracoes: Float64Array, minimo: number): [number, number] | null {
-  let melhor: [number, number] | null = null;
+/** Média móvel: uma linha de tabela ou um texto mais denso não "quebra" o papel em dois. */
+function suavizar(valores: Float64Array, raio: number): Float64Array {
+  const out = new Float64Array(valores.length);
+  let soma = 0;
+  let n = 0;
+  for (let i = -raio; i < valores.length; i++) {
+    const entra = i + raio;
+    const sai = i - raio - 1;
+    if (entra < valores.length) {
+      soma += valores[entra]!;
+      n++;
+    }
+    if (sai >= 0) {
+      soma -= valores[sai]!;
+      n--;
+    }
+    if (i >= 0) out[i] = soma / n;
+  }
+  return out;
+}
+
+/** Maior sequência de posições com fração >= mínimo, juntando trechos separados por falhas curtas. */
+function maiorTrecho(fracoes: Float64Array, minimo: number, falhaMax: number): [number, number] | null {
+  const trechos: Array<[number, number]> = [];
   let inicio = -1;
   for (let i = 0; i <= fracoes.length; i++) {
     const dentro = i < fracoes.length && fracoes[i]! >= minimo;
     if (dentro && inicio < 0) inicio = i;
     if (!dentro && inicio >= 0) {
-      if (!melhor || i - inicio > melhor[1] - melhor[0]) melhor = [inicio, i];
+      const anterior = trechos.at(-1);
+      if (anterior && inicio - anterior[1] <= falhaMax) anterior[1] = i;
+      else trechos.push([inicio, i]);
       inicio = -1;
     }
   }
+  let melhor: [number, number] | null = null;
+  for (const t of trechos) if (!melhor || t[1] - t[0] > melhor[1] - melhor[0]) melhor = t;
   return melhor;
+}
+
+/** Brilho médio de um retângulo. */
+function media(lum: Uint8Array, w: number, x0: number, y0: number, x1: number, y1: number): number {
+  let soma = 0;
+  let n = 0;
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++, n++) soma += lum[y * w + x]!;
+  return n ? soma / n : 0;
 }
 
 /**
  * Onde está o papel (claro) na foto. null quando não dá para separar o papel do fundo com
  * segurança ou quando ele já ocupa quase a foto toda — nesses casos não se recorta nada.
+ * Na dúvida, não corta: perder um pedaço da nota (nome do posto, data) é pior que sobrar fundo.
  */
 export function detectarPapel(lum: Uint8Array, w: number, h: number): Retangulo | null {
   const { limiar, separacao } = limiarOtsu(lum);
@@ -76,7 +110,7 @@ export function detectarPapel(lum: Uint8Array, w: number, h: number): Retangulo 
   const colunas = new Float64Array(w);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (lum[y * w + x]! > limiar) colunas[x]! += 1;
   for (let x = 0; x < w; x++) colunas[x]! /= h;
-  const trechoX = maiorTrecho(colunas, 0.3);
+  const trechoX = maiorTrecho(suavizar(colunas, Math.round(w * 0.015)), 0.3, Math.round(w * 0.05));
   if (!trechoX) return null;
 
   const linhas = new Float64Array(h);
@@ -86,15 +120,26 @@ export function detectarPapel(lum: Uint8Array, w: number, h: number): Retangulo 
     for (let x = trechoX[0]; x < trechoX[1]; x++) if (lum[y * w + x]! > limiar) claros++;
     linhas[y] = claros / larg;
   }
-  const trechoY = maiorTrecho(linhas, 0.45);
+  const trechoY = maiorTrecho(suavizar(linhas, Math.round(h * 0.015)), 0.45, Math.round(h * 0.05));
   if (!trechoY) return null;
 
   // folga de 2% para não cortar a borda do papel
   const folgaX = Math.round(w * 0.02);
   const folgaY = Math.round(h * 0.02);
-  const x = Math.max(0, trechoX[0] - folgaX);
-  const y = Math.max(0, trechoY[0] - folgaY);
-  const r = { x, y, w: Math.min(w, trechoX[1] + folgaX) - x, h: Math.min(h, trechoY[1] + folgaY) - y };
+  let x0 = Math.max(0, trechoX[0] - folgaX);
+  let y0 = Math.max(0, trechoY[0] - folgaY);
+  let x1 = Math.min(w, trechoX[1] + folgaX);
+  let y1 = Math.min(h, trechoY[1] + folgaY);
+
+  // trava: só corta um lado se o que sai for bem mais escuro que o papel (fundo de verdade)
+  const papel = media(lum, w, x0, y0, x1, y1);
+  const fundo = (m: number) => m < papel * 0.8;
+  if (y0 > 0 && !fundo(media(lum, w, x0, 0, x1, y0))) y0 = 0;
+  if (y1 < h && !fundo(media(lum, w, x0, y1, x1, h))) y1 = h;
+  if (x0 > 0 && !fundo(media(lum, w, 0, y0, x0, y1))) x0 = 0;
+  if (x1 < w && !fundo(media(lum, w, x1, y0, w, y1))) x1 = w;
+
+  const r = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
   const area = (r.w * r.h) / (w * h);
   if (area > 0.9 || area < 0.08 || r.w < w * 0.15 || r.h < h * 0.15) return null;
   return r;
@@ -192,7 +237,7 @@ export interface CupomDigitalizado {
 /** Digitaliza a foto do cupom no navegador (canvas). */
 export async function digitalizarCupom(
   arquivo: Blob,
-  { maxDimension = 2200, quality = 0.85 }: { maxDimension?: number; quality?: number } = {},
+  { maxDimension = 2600, quality = 0.85 }: { maxDimension?: number; quality?: number } = {},
 ): Promise<CupomDigitalizado> {
   const imagem = await decodificarImagem(arquivo);
   try {

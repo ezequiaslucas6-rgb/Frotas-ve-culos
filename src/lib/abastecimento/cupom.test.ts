@@ -9,6 +9,7 @@ const base: LeituraCupom = {
   preco_unitario: null,
   valor_item: null,
   desconto_item: null,
+  valor_liquido_item: null,
   valor_total_nota: null,
   desconto_nota: null,
   acrescimo_nota: null,
@@ -54,7 +55,7 @@ describe('leitura do cupom', () => {
   it('desconto que não vem escrito sai da diferença entre o total e o valor a pagar', () => {
     const c = calcularCupom({ ...base, litros: 50, preco_unitario: 6.09, valor_total_nota: 304.5, valor_a_pagar: 294.5 });
     expect(c).toMatchObject({ desconto: 10, valorLiquido: 294.5, unitarioComDesconto: 5.89 });
-    expect(c.avisos[0]).toMatch(/diferença entre o valor total e o valor a pagar/);
+    expect(c.avisos[0]).toMatch(/diferença entre o valor total e o valor pago/);
   });
 
   it('número lido errado não passa na conferência', () => {
@@ -116,7 +117,7 @@ describe('leitura vinda da IA (tolerante)', () => {
       litros: '45,320',
       preco_unitario: 6.19,
       valor_item: 'R$ 280,53',
-      desconto_nota: -3,
+      desconto_nota: -3, // impresso com sinal
       data: '06/10/2026',
       posto: '  AUTO POSTO  ',
       km: '48200',
@@ -126,7 +127,7 @@ describe('leitura vinda da IA (tolerante)', () => {
       combustivel: null,
       litros: 45.32,
       valor_item: 280.53,
-      desconto_nota: null,
+      desconto_nota: 3,
       data: null,
       posto: 'AUTO POSTO',
       km: 48200,
@@ -134,5 +135,121 @@ describe('leitura vinda da IA (tolerante)', () => {
       valor_a_pagar: null,
     });
     expect(leituraCupomSchema.parse({}).legivel).toBe(false);
+  });
+});
+
+/*
+ * Modelos de nota reais da frota (valores transcritos das fotos enviadas):
+ *  - NFC-e xpert do Posto Minuano: "5.413 LT" (ponto decimal), desconto e valor líquido na linha, placa e KM no rodapé
+ *  - DANFE A4 do Auto Posto Pimenta Bueno: "% DESCONTO", VALOR LÍQUIDO na linha, total dos produtos x total da nota
+ *  - NFC-e xpert do Posto Forte: sem desconto, "19.737 LT", "KM: 0", recibo manual atrás
+ */
+describe('modelos de nota da frota', () => {
+  const minuano: LeituraCupom = {
+    ...base,
+    combustivel: 'gasolina',
+    produto: 'GASOLINA COMUM ORIGINAL',
+    litros: 5.413,
+    preco_unitario: 7.39,
+    valor_item: 40,
+    desconto_item: 2.27,
+    valor_liquido_item: 37.73,
+    valor_total_nota: 40,
+    desconto_nota: 2.27,
+    acrescimo_nota: 0,
+    valor_a_pagar: 37.73,
+    data: '2026-09-28',
+    posto: 'POSTO MINUANO',
+    cnpj: '14.017.058/0001-52',
+    placa: 'RSV2A77',
+    km: 68668,
+  };
+  const danfe: LeituraCupom = {
+    ...base,
+    combustivel: 'diesel_s10',
+    produto: 'OLEO DIESEL B S10 ADIT PETROBRAS GRID',
+    litros: 40.35,
+    preco_unitario: 8.08,
+    valor_item: null,
+    valor_liquido_item: 289.71,
+    valor_total_nota: 326.03,
+    desconto_nota: 36.32,
+    acrescimo_nota: 0,
+    valor_a_pagar: 289.71,
+    data: '2026-09-21',
+    posto: 'AUTO POSTO PIMENTA BUENO LTDA',
+    cnpj: '04.380.678/0001-06',
+    placa: 'QTG2489',
+    km: 212855,
+  };
+  const forte: LeituraCupom = {
+    ...base,
+    combustivel: 'diesel_s10',
+    produto: 'DIESEL S10 COMUM',
+    litros: 19.737,
+    preco_unitario: 7.6,
+    valor_item: 150,
+    valor_total_nota: 150,
+    desconto_nota: 0,
+    acrescimo_nota: 0,
+    valor_a_pagar: 150,
+    data: '2026-08-27',
+    posto: 'POSTO FORTE',
+    cnpj: '07.646.667/0001-05',
+  };
+
+  it('Minuano (NFC-e com desconto na linha): R$ 37,73 líquido, R$ 6,97/L', () => {
+    const c = calcularCupom(minuano);
+    expect(c).toMatchObject({ litros: 5.413, valorBruto: 40, desconto: 2.27, valorAPagar: 37.73, valorLiquido: 37.73, unitarioComDesconto: 6.97, confiavel: true });
+    expect(c.conferencias.map((x) => x.texto)).toEqual(['Litros × preço da bomba = valor total', 'Valor total − desconto = valor líquido']);
+    expect(c.avisos).toEqual([]);
+  });
+
+  it('Minuano lido com "5.413" como cinco mil litros: a quantidade é corrigida', () => {
+    const c = calcularCupom({ ...minuano, litros: 5413 });
+    expect(c).toMatchObject({ litros: 5.413, unitarioComDesconto: 6.97, confiavel: true });
+    expect(c.avisos[0]).toMatch(/Quantidade lida como 5,413 L/);
+  });
+
+  it('DANFE (A4): R$ 326,03 − R$ 36,32 = R$ 289,71; R$ 7,18/L', () => {
+    const c = calcularCupom(danfe);
+    expect(c).toMatchObject({ litros: 40.35, valorBruto: 326.03, desconto: 36.32, valorAPagar: 289.71, valorLiquido: 289.71, unitarioComDesconto: 7.18, confiavel: true });
+    expect(c.conferencias.every((x) => x.ok)).toBe(true);
+    expect(c.avisos).toEqual([]);
+  });
+
+  it('DANFE com a porcentagem (11,14) lida como desconto: vale o desconto que fecha com o valor líquido', () => {
+    const c = calcularCupom({ ...danfe, desconto_item: 11.14 });
+    expect(c).toMatchObject({ desconto: 36.32, valorLiquido: 289.71, confiavel: true });
+    expect(c.avisos[0]).toMatch(/não fecha com o valor pago: usado R\$\s36,32/);
+  });
+
+  it('DANFE com o "valor total da nota" (já com desconto) lido como valor total: corrigido', () => {
+    const c = calcularCupom({ ...danfe, valor_total_nota: 289.71 });
+    expect(c).toMatchObject({ valorBruto: 326.03, desconto: 36.32, valorLiquido: 289.71, unitarioComDesconto: 7.18, confiavel: true });
+    expect(c.avisos[0]).toMatch(/já era o valor com desconto/);
+  });
+
+  it('Posto Forte (sem desconto): R$ 150,00 e R$ 7,60/L', () => {
+    const c = calcularCupom(forte);
+    expect(c).toMatchObject({ litros: 19.737, valorBruto: 150, desconto: 0, valorLiquido: 150, unitarioComDesconto: 7.6, confiavel: true });
+    expect(c.avisos).toEqual([]);
+  });
+
+  it('desconto impresso com sinal, placa com hífen e "KM: 0" chegam limpos', async () => {
+    const { leituraCupomSchema } = await import('./cupom');
+    const l = leituraCupomSchema.parse({ ...minuano, desconto_item: -2.27, desconto_nota: '-2,27', placa: 'rsv-2a77', km: 0 });
+    expect(l).toMatchObject({ desconto_item: 2.27, desconto_nota: 2.27, placa: 'RSV2A77', km: null });
+    expect(leituraCupomSchema.parse({ ...forte, placa: '', km: '0' })).toMatchObject({ placa: null, km: null });
+  });
+});
+
+describe('placa do cupom', () => {
+  it('confere com o veículo escolhido (com ou sem hífen); sem placa no cupom, não confere nada', async () => {
+    const { conferirPlaca } = await import('./cupom');
+    expect(conferirPlaca('RSV2A77', 'rsv-2a77')).toEqual({ ok: true, texto: 'Placa do cupom = veículo escolhido (RSV2A77)' });
+    expect(conferirPlaca('QTG2489', 'ABC1D23')).toMatchObject({ ok: false });
+    expect(conferirPlaca('QTG2489', 'ABC1D23')!.texto).toMatch(/placa no cupom é QTG2489, mas o veículo escolhido é ABC1D23/);
+    expect(conferirPlaca(null, 'ABC1D23')).toBeNull();
   });
 });
