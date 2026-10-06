@@ -64,7 +64,9 @@ export function TestadorCupons({ modelos }: { modelos: string[] }) {
       .map((t) => ({
         arquivo: t.nome,
         tempos: t.tempos,
-        ...(t.resultado!.ok ? { leitura: t.resultado!.registro, calculo: t.resultado!.calculo } : { erro: t.resultado!.mensagem }),
+        ...(t.resultado!.ok
+          ? { leitura: t.resultado!.registro, calculo: t.resultado!.calculo }
+          : { erro: t.resultado!.mensagem, detalhe: t.resultado!.detalhe }),
       }));
     try {
       await navigator.clipboard.writeText(JSON.stringify(dados, null, 2));
@@ -139,7 +141,12 @@ export function TestadorCupons({ modelos }: { modelos: string[] }) {
                     onTentarDeNovo={() => undefined}
                   />
                 ) : (
-                  <LeituraCupom estado={{ fase: 'erro', mensagem: r.mensagem, podeTentar: false }} unidade="L" onTentarDeNovo={() => undefined} />
+                  <>
+                    <LeituraCupom estado={{ fase: 'erro', mensagem: r.mensagem, podeTentar: false }} unidade="L" onTentarDeNovo={() => undefined} />
+                    {r.detalhe ? (
+                      <p className="rounded-xl bg-raised px-3 py-2 font-mono text-xs break-words text-muted-foreground">Detalhe: {r.detalhe}</p>
+                    ) : null}
+                  </>
                 )}
                 {l ? (
                   <dl className="grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-2">

@@ -1,6 +1,6 @@
 /** Respostas e falhas da API do Gemini, sem dependência do servidor (testável). */
 
-export type CodigoErroIA = 'sem_chave' | 'chave_invalida' | 'limite' | 'modelo' | 'regiao' | 'indisponivel' | 'resposta_invalida';
+export type CodigoErroIA = 'sem_chave' | 'chave_invalida' | 'limite' | 'modelo' | 'regiao' | 'indisponivel' | 'recusado' | 'resposta_invalida';
 
 export const MENSAGEM_ERRO_IA: Record<CodigoErroIA, string> = {
   sem_chave: 'A leitura automática do cupom não está ligada neste servidor.',
@@ -9,6 +9,7 @@ export const MENSAGEM_ERRO_IA: Record<CodigoErroIA, string> = {
   modelo: 'O modelo do Gemini configurado não está disponível. Ajuste GEMINI_MODELOS no .env do servidor.',
   regiao: 'O Gemini não atende a região do servidor.',
   indisponivel: 'A leitura automática não respondeu agora. Preencha à mão ou tire a foto de novo.',
+  recusado: 'O Gemini recusou o pedido de leitura. Preencha à mão; o detalhe aparece em Abastecimentos → Testar leitura de cupons.',
   resposta_invalida: 'Não foi possível entender a leitura do cupom. Confira a foto ou preencha à mão.',
 };
 

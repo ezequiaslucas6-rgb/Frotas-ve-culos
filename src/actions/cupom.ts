@@ -16,7 +16,7 @@ export interface TemposLeitura {
 
 export type ResultadoLeituraCupom =
   | { ok: true; registro: RegistroLeitura; calculo: CalculoCupom; tempos?: TemposLeitura }
-  | { ok: false; codigo: string; mensagem: string };
+  | { ok: false; codigo: string; mensagem: string; /** motivo técnico (só na tela de teste do admin) */ detalhe?: string };
 
 const limitador = criarLimitador({ porMinuto: 10, porDia: 80 });
 const limitadorTeste = criarLimitador({ porMinuto: 10, porDia: 150 });
@@ -70,7 +70,7 @@ export async function testarLeituraCupom(caminho: string): Promise<ResultadoLeit
     return { ok: false, codigo: 'limite_usuario', mensagem: 'Muitas leituras seguidas. Aguarde um minuto.' };
   }
   try {
-    return await lerDoStorage(session.supabase, caminho);
+    return await lerDoStorage(session.supabase, caminho, { comDetalhe: true });
   } finally {
     await session.supabase.storage.from('abastecimentos').remove([caminho]);
   }
@@ -78,7 +78,7 @@ export async function testarLeituraCupom(caminho: string): Promise<ResultadoLeit
 
 type ClienteSessao = Awaited<ReturnType<typeof requireSession>>['supabase'];
 
-async function lerDoStorage(supabase: ClienteSessao, caminho: string): Promise<ResultadoLeituraCupom> {
+async function lerDoStorage(supabase: ClienteSessao, caminho: string, { comDetalhe = false } = {}): Promise<ResultadoLeituraCupom> {
   const inicio = Date.now();
   const { data: arquivo, error } = await supabase.storage.from('abastecimentos').download(caminho);
   const foto = Date.now() - inicio;
@@ -102,9 +102,14 @@ async function lerDoStorage(supabase: ClienteSessao, caminho: string): Promise<R
   } catch (e) {
     if (e instanceof ErroIA) {
       if (e.detalhe) console.warn(`[cupom] ${e.codigo}: ${e.detalhe}`);
-      return { ok: false, codigo: e.codigo, mensagem: e.message };
+      return { ok: false, codigo: e.codigo, mensagem: e.message, ...(comDetalhe && e.detalhe ? { detalhe: e.detalhe } : {}) };
     }
     console.error('[cupom] falha na leitura', e);
-    return { ok: false, codigo: 'resposta_invalida', mensagem: MENSAGEM_ERRO_IA.resposta_invalida };
+    return {
+      ok: false,
+      codigo: 'resposta_invalida',
+      mensagem: MENSAGEM_ERRO_IA.resposta_invalida,
+      ...(comDetalhe ? { detalhe: e instanceof Error ? e.message.slice(0, 300) : String(e).slice(0, 300) } : {}),
+    };
   }
 }

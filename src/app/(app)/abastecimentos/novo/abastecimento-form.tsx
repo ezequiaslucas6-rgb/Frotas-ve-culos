@@ -52,7 +52,7 @@ async function cronometrar<T>(fn: () => Promise<T>): Promise<[T, number]> {
   return [r, Math.round(performance.now() - inicio)];
 }
 
-const CODIGOS_SEM_NOVA_TENTATIVA = new Set(['sem_chave', 'chave_invalida', 'regiao', 'modelo', 'limite', 'limite_usuario']);
+const CODIGOS_SEM_NOVA_TENTATIVA = new Set(['sem_chave', 'chave_invalida', 'regiao', 'modelo', 'limite', 'limite_usuario', 'recusado']);
 
 export function AbastecimentoForm({ veiculos, motoristas, veiculoInicial, combustivelInicial, hoje, leituraAutomatica }: AbastecimentoFormProps) {
   const { state, pending, onSubmit, fieldError } = useServerForm(registrarAbastecimento);

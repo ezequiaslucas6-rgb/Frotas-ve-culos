@@ -209,8 +209,10 @@ valor total, desconto, combustível, data e posto. A pessoa confere e registra.
   estar errado, nada é adivinhado: a pessoa confere na foto.
 - **KM impresso** (digitado pelo frentista): só preenche o hodômetro se estiver entre o último KM do veículo e 3.000 km
   acima dele; fora disso, avisa e deixa para digitar (KM errado estragaria o consumo).
-- **Velocidade:** o modelo responde sem "raciocínio" (mais rápido) e com a imagem em alta resolução; cada modelo tem
-  no máximo 25 s (40 s no total). O resumo mostra quanto levou cada etapa (*foto · envio · leitura*).
+- **Velocidade:** o modelo responde sem "raciocínio" (mais rápido) quando ele permite; se o Google recusar esse ajuste,
+  o sistema repete a leitura com a chamada simples e lembra disso para as próximas. Cada modelo tem no máximo 25 s
+  (40 s no total). O resumo mostra quanto levou cada etapa (*foto · envio · leitura*). Se a leitura falhar, a tela
+  **Testar leitura de cupons** (Administrador Geral) mostra o motivo exato devolvido pelo Google.
 - Nota com outros produtos (ARLA, óleo…): usa a linha do combustível; desconto só da nota inteira é dividido
   proporcionalmente, com aviso.
 - Modelos ajustados com notas reais da frota: **NFC-e** (sistema xpert: quantidade impressa com ponto, "5.413 LT" =
