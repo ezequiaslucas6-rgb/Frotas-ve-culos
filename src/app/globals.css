@@ -70,6 +70,9 @@
   --warning-text: #8a5c06;
   --destructive: #d93a4a;
   --destructive-text: #b42536;
+  /* séries dos gráficos de custo: manutenção (violeta) x combustível (azul dos ícones) */
+  --serie-manutencao: #7a5af0;
+  --serie-combustivel: #0097ff;
   color-scheme: light;
 }
 
@@ -92,6 +95,8 @@
   --warning-text: #e3a63b;
   --destructive: #ea4f78;
   --destructive-text: #f2759a;
+  --serie-manutencao: #a08cff;
+  --serie-combustivel: #2ea3ff;
   color-scheme: dark;
 }
 

@@ -59,6 +59,11 @@ export interface CicloConsumo {
  * Ciclos pelo método tanque cheio a tanque cheio, por veículo: a distância entre
  * dois abastecimentos completos dividida pelos litros colocados depois do primeiro
  * (inclui os parciais do meio). GNV (m³) fica fora do cálculo em km/l.
+ *
+ * Só entra o KM digitado NO ABASTECIMENTO: o KM do checklist (ou de uma manutenção) nunca é
+ * usado aqui. Ex.: checklist com 100 km, 2 km até o posto, tanque cheio com 102 km: o ciclo
+ * vai do tanque cheio anterior até 102 km. O KM do checklist só serve de mínimo para o KM
+ * do abastecimento (o hodômetro não volta).
  */
 export function ciclosConsumo(lancamentos: LancamentoConsumo[]): CicloConsumo[] {
   const ordenados = lancamentos

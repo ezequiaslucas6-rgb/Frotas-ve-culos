@@ -13,4 +13,8 @@
     <string name="atualizacao_baixando">Baixando a atualização do Rodar…</string>
     <string name="atualizacao_falhou">Não foi possível atualizar agora. Tente mais tarde.</string>
     <string name="atualizacao_permissao">Permita que o Rodar instale a atualização e volte ao app.</string>
+    <string name="lembretes_canal">Lembretes do checklist</string>
+    <string name="lembretes_canal_descricao">Checklist do dia às 08:00 e, para o supervisor, o resumo das 08:30.</string>
+    <string name="lembrete_offline_titulo">Bom dia! Hora do checklist</string>
+    <string name="lembrete_offline_texto">Faça o checklist do veículo antes de sair (o diário até as 08:30; no sábado e no domingo, o semanal).</string>
 </resources>

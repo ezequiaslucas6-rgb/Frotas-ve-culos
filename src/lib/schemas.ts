@@ -153,6 +153,12 @@ export const liberarVeiculoSchema = z.object({
   motivo: z.string('Informe o motivo da liberação.').trim().min(5, 'Informe o motivo da liberação (mínimo 5 caracteres).').max(500),
 });
 
+export const decisaoDiariaSchema = z.object({
+  veiculoId: uuid,
+  liberado: z.boolean(),
+  observacao: z.string().trim().max(300).optional(),
+});
+
 const marcadorSchema = z.object({ x: z.number().min(0).max(100), y: z.number().min(0).max(100) });
 
 const codigoItem = z.string().regex(/^[a-z0-9_]{2,40}$/, 'Item de checklist inválido.');

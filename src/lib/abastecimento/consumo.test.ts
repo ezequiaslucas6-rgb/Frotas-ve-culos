@@ -40,6 +40,13 @@ describe('calcularConsumo (tanque cheio a tanque cheio)', () => {
     expect(r.media).toBe(10);
   });
 
+  it('usa só o KM dos abastecimentos: o checklist (100 km) não entra, o tanque cheio a 102 km fecha o ciclo', () => {
+    // tanque cheio a 0 km; checklist registra 100 km (não é lançamento de consumo);
+    // anda 2 km até o posto e enche o tanque a 102 km com 10 L: 102 km / 10 L
+    const r = calcularConsumo([l('a', 0, 40), l('b', 102, 10)]);
+    expect(r.porLancamento).toEqual({ b: 10.2 });
+  });
+
   it('soma os parciais do meio ao ciclo seguinte', () => {
     const r = calcularConsumo([l('a', 1000, 40), l('p', 1200, 20, false), l('b', 1600, 40)]);
     expect(r.porLancamento).toEqual({ b: 10 }); // 600 km / (20 + 40) L

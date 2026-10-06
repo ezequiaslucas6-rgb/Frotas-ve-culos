@@ -22,9 +22,11 @@ roda na **sua VPS** em Docker, atrás do Nginx, num subdomínio com HTTPS.
    6. `20260106000000_checklist_motorista.sql` (o motorista faz o checklist dos próprios veículos)
    7. `20260107000000_avaria_bloqueio.sql` (avaria crítica abre manutenção e deixa o veículo não liberado)
    8. `20260108000000_cupom_abastecimento.sql` (valor total, desconto e leitura do cupom no abastecimento)
+   9. `20260109000000_rotina_checklist.sql` (horário de Pimenta Bueno, decisão diária do supervisor, semanal
+      obrigatório, foto da carcaça dos retrovisores)
 
    **Já tinha o sistema instalado?** Rode apenas o que ainda não rodou (nessa ordem, separados) e depois atualize o
-   app na VPS. Quem já está com os itens 1–7 roda só o item 8.
+   app na VPS. Quem já está com os itens 1–8 roda só o item 9.
 2. Execute `supabase/seed.sql` (filiais de exemplo).
 3. **Primeiro Administrador Geral (obrigatório).** Crie o usuário em *Authentication → Users → Add user* (marque
    *Auto Confirm User*) e vincule-o como admin:
@@ -107,6 +109,16 @@ Cadastre os 4 valores em *Settings → Secrets and variables → Actions → New
 usada. Nos celulares, desinstale o app antigo **uma última vez**; daí em diante, cada versão instala por cima.
 Guarde uma cópia de `~/rodar-chave-apk` fora da VPS e **nunca** coloque a chave no repositório (ele é público).
 
+**Lembretes no celular.** O APK avisa, no horário de Pimenta Bueno (America/Porto_Velho):
+- **08:00, motorista:** o checklist do dia de cada veículo dele (o diário até as 08:30; no sábado e no domingo, o
+  semanal obrigatório; ou que o veículo está *não liberado* por falta do semanal). Quem já fez não recebe nada.
+- **08:30, supervisor e Administrador Geral:** quantos veículos fizeram o diário e quantos esperam a decisão de
+  liberar ou não (toque abre **Checklist de hoje**).
+
+Na hora, o app pergunta ao sistema o que avisar (`/api/lembretes`, com o login do próprio app). Sem internet às 08:00,
+o motorista recebe um lembrete simples. Na primeira abertura o Android pede para permitir notificações (Android 13+).
+Os alarmes voltam sozinhos depois de reiniciar o celular.
+
 ## 4. Desenvolvimento
 ```bash
 npm install
@@ -161,7 +173,18 @@ Motorista com status *Inativo* perde o acesso na hora. *Remover acesso* apaga o 
 Lançados pelo motorista (ou pelo supervisor): data, KM do hodômetro, combustível, litros, valor, tanque cheio/parcial,
 posto e **foto do cupom**. O KM do veículo é atualizado automaticamente (nunca regride) e o app recusa KM menor que o
 último registrado no mesmo dia. O **consumo (km/l)** usa o método tanque cheio a tanque cheio (parciais somam ao ciclo
-seguinte). O painel passa a mostrar o **custo da frota = manutenção + combustível**.
+seguinte) e **só o KM digitado nos abastecimentos**: o KM do checklist nunca entra na conta (ele só serve de mínimo
+para o KM do abastecimento). Ex.: checklist com 100 km, 2 km até o posto, tanque cheio com 102 km: o ciclo vai do
+tanque cheio anterior até 102 km. O painel mostra o custo de **manutenção** e o de **combustível** em gráficos
+separados.
+
+**Acompanhamento** (supervisor e Administrador Geral, em *Abastecimentos → Acompanhamento*): o período escolhido com
+valor pago, descontos, litros, preço médio com desconto e da bomba, consumo, custo por km, cupons a conferir e
+lançamentos sem foto; totais **por veículo, por motorista e por posto**; e cada lançamento com todos os detalhes
+(preço da bomba, desconto, unitário com desconto, KM, quanto rodou desde o anterior, km/l, posto, horário do registro,
+KM e placa impressos no cupom, se os valores vieram da leitura da foto e se foram mudados à mão). Filtros por data,
+veículo, motorista, combustível, posto e situação. **Exportar planilha** gera um CSV com os mesmos filtros (abre no
+Excel ou no Planilhas Google; use no computador).
 
 **Nota de abastecimento: desconto e preço por litro.** O cupom mostra o valor total e o desconto, mas não o preço
 por litro com desconto. O lançamento pede **litros, valor total e desconto** e calcula sozinho:
@@ -179,18 +202,27 @@ valor total, desconto, combustível, data e posto. A pessoa confere e registra.
 - A IA só **transcreve** os números impressos; as contas são feitas pelo sistema e **conferidas com o próprio
   cupom** (litros × preço da bomba = valor total; valor total − desconto = valor a pagar). Se algo não bate, o
   resumo mostra **Confira** e o motivo; se tudo bate, **Conferido**.
+- **Dígito lido errado:** se as contas não fecham, o sistema procura **um** número com um dígito trocado (ex.: 40,35 L
+  lido como 45,35 L) cuja correção fecha **todas** as contas no centavo, e só corrige quando essa correção é a única
+  possível (números impressos duas vezes iguais, como o valor pago da DANFE, nunca são trocados). O campo corrigido
+  aparece destacado (*corrigido · lido 45,35 L*) e o resumo pede *Corrigido: confira*. Se mais de um número pode
+  estar errado, nada é adivinhado: a pessoa confere na foto.
+- **KM impresso** (digitado pelo frentista): só preenche o hodômetro se estiver entre o último KM do veículo e 3.000 km
+  acima dele; fora disso, avisa e deixa para digitar (KM errado estragaria o consumo).
+- **Velocidade:** o modelo responde sem "raciocínio" (mais rápido) e com a imagem em alta resolução; cada modelo tem
+  no máximo 25 s (40 s no total). O resumo mostra quanto levou cada etapa (*foto · envio · leitura*).
 - Nota com outros produtos (ARLA, óleo…): usa a linha do combustível; desconto só da nota inteira é dividido
   proporcionalmente, com aviso.
 - Modelos ajustados com notas reais da frota: **NFC-e** (sistema xpert: quantidade impressa com ponto, "5.413 LT" =
   5,413 L; desconto e valor líquido na linha do item) e **DANFE A4** ("VALOR TOTAL DOS PRODUTOS" antes do desconto,
   "VALOR TOTAL DA NOTA" já com desconto, "% DESCONTO" é porcentagem). Se a leitura trocar esses campos, o cálculo
   percebe pelas conferências e corrige, com aviso.
-- **Placa e KM impressos** (notas de convênio/frota): o KM preenche o hodômetro e a placa é comparada com o veículo
-  escolhido; placa diferente pede conferência (abastecimento de outro veículo ou desvio).
+- **Placa impressa** (notas de convênio/frota): é comparada com o veículo escolhido; placa diferente pede conferência
+  (abastecimento de outro veículo ou desvio).
 - O que foi lido fica gravado no lançamento (`leitura_cupom`) para conferência.
 - **Chave gratuita:** crie em [aistudio.google.com/apikey](https://aistudio.google.com/apikey), coloque em
   `GEMINI_API_KEY` no `/opt/frotas/.env` da VPS e rode o instalador. A chave fica só no servidor.
-  `GEMINI_MODELOS` define a ordem dos modelos (padrão `gemini-flash-lite-latest,gemini-flash-latest`): se o limite
+  `GEMINI_MODELOS` define a ordem dos modelos (padrão `gemini-flash-latest,gemini-flash-lite-latest`): se o limite
   gratuito de um acabar, usa o próximo. Sem chave, sem cota ou sem internet, o lançamento é digitado à mão (as
   contas continuam automáticas).
 - No plano gratuito, o Google pode usar as imagens enviadas para melhorar os produtos dele. Para que isso não
@@ -239,9 +271,9 @@ validado na própria VPS, sem essa ida. O `deploy/diagnostico.sh` mostra qual é
 ## Checklist diário, semanal e mensal
 | Tipo | Fotos (padrão) |
 |---|---|
-| **Diário** | Exterior (frente, traseira, 2 laterais) · **Pneus** (os 4) · **Retrovisores** (os 2) · **Motor e fluidos** (óleo, fluido de freio, água do arrefecimento) · Cabine (painel com KM, **bancos**) — 15 fotos |
-| **Semanal** | Diário + luzes, para-brisa, estepe, carroceria/porta-malas — 19 fotos |
-| **Mensal** | Semanal + compartimento do motor, equipamentos obrigatórios — 21 fotos |
+| **Diário** | Exterior (frente, traseira, 2 laterais) · **Pneus** (os 4) · **Retrovisores** (os 2 espelhos e a **carcaça** de cada um, por trás) · **Motor e fluidos** (óleo, fluido de freio, água do arrefecimento) · Cabine (painel com KM, **bancos**) — 17 fotos |
+| **Semanal** | Diário + luzes, para-brisa, estepe, carroceria/porta-malas — 21 fotos |
+| **Mensal** | Semanal + compartimento do motor, equipamentos obrigatórios — 23 fotos |
 
 Em todos os tipos: **"O veículo tem algum vazamento ou avaria?" Sim/Não** — no "Sim" a foto (com Atenção/Avaria e
 descrição) passa a ser obrigatória. O Administrador Geral ajusta o que cada tipo exige em **Checklists → Modelos**.
@@ -252,10 +284,18 @@ Só câmera: não existe opção de galeria (no APK o campo abre a câmera diret
 final é uma RPC atômica (`salvar_checklist`) que confere as fotos com o modelo do tipo e grava checklist + fotos + KM
 numa transação.
 
-**Cobrança.** O painel mostra *Checklists pendentes*: quais veículos ainda não fizeram o **diário de hoje**, o
-**semanal desta semana** (de segunda a domingo) e o **mensal deste mês** (horário de São Paulo), com atalho para fazer.
-Um checklist maior cobre os menores do mesmo período (o mensal vale como semanal e diário; o semanal, como diário).
-Veículos *não liberados* ficam fora da cobrança até o conserto. O motorista vê a mesma situação em **Meu veículo**.
+**Rotina (horário de Pimenta Bueno/RO).**
+- **Diário — não é obrigatório.** O motorista faz até as **08:30**. Depois disso, o supervisor abre **Checklist de
+  hoje** (menu, painel ou a notificação das 08:30), vê quem fez e decide, para cada veículo sem checklist, **Liberar**
+  ou **Não liberar** para uso hoje (com observação opcional; pode mudar no mesmo dia). *Não liberado hoje* vale até o
+  veículo fazer o checklist do dia.
+- **Semanal — obrigatório no sábado ou no domingo.** Sem ele, o veículo fica **não liberado** de segunda em diante,
+  até fazer (vale a partir do fim de semana de 10/10/2026; veículo cadastrado depois do sábado só entra no próximo).
+- **Mensal:** o do mês, sem bloqueio.
+
+Um checklist maior cobre os menores (o mensal vale como semanal e diário; o semanal, como diário). O painel mostra o
+quadro *Checklists* com os três e o que espera decisão; veículos parados por avaria ficam fora da cobrança até o
+conserto. O motorista vê a mesma situação em **Meu veículo**, com o aviso em vermelho quando o veículo não está liberado.
 
 **Sem sinal (APK e navegador).** O checklist funciona sem internet: as fotos ficam guardadas no aparelho (*No aparelho ·
 envia quando houver internet*) e, ao tocar em *Enviar*, o checklist inteiro vai para uma fila no celular. Quando a

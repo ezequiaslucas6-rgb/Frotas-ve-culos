@@ -13,8 +13,8 @@ export type ItemChecklist = Pick<
 export type ModelosChecklist = Record<ChecklistTipo, ItemChecklist[]>;
 
 export const TIPOS_CHECKLIST: ReadonlyArray<{ value: ChecklistTipo; label: string; descricao: string }> = [
-  { value: 'diario', label: 'Diário', descricao: 'Antes de sair com o veículo.' },
-  { value: 'semanal', label: 'Semanal', descricao: 'Revisão da semana.' },
+  { value: 'diario', label: 'Diário', descricao: 'Antes de sair com o veículo, até as 08:30.' },
+  { value: 'semanal', label: 'Semanal', descricao: 'Obrigatório no sábado ou domingo.' },
   { value: 'mensal', label: 'Mensal', descricao: 'Inspeção completa do mês.' },
 ];
 

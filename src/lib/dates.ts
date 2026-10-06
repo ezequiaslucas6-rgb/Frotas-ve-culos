@@ -1,5 +1,8 @@
-/** Datas "de calendário" (YYYY-MM-DD) no fuso do negócio, sem depender do fuso do servidor. */
-export const TIMEZONE = 'America/Sao_Paulo';
+/**
+ * Datas "de calendário" (YYYY-MM-DD) e horas no fuso do negócio, sem depender do fuso do
+ * servidor: Pimenta Bueno/RO (America/Porto_Velho, UTC−4, sem horário de verão).
+ */
+export const TIMEZONE = 'America/Porto_Velho';
 
 const isoFormatter = new Intl.DateTimeFormat('en-CA', {
   timeZone: TIMEZONE,
@@ -8,9 +11,42 @@ const isoFormatter = new Intl.DateTimeFormat('en-CA', {
   day: '2-digit',
 });
 
-/** Data de hoje (ou de um instante qualquer) em America/Sao_Paulo, como YYYY-MM-DD. */
+/** Data de hoje (ou de um instante qualquer) no horário de Pimenta Bueno, como YYYY-MM-DD. */
 export function toISODate(instant: Date | string | number = new Date()): string {
   return isoFormatter.format(new Date(instant));
+}
+
+const horaFormatter = new Intl.DateTimeFormat('en-GB', { timeZone: TIMEZONE, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+
+/** Hora local "HH:MM" (horário de Pimenta Bueno) de um instante. */
+export function horaLocal(instant: Date | string | number = new Date()): string {
+  return horaFormatter.format(new Date(instant));
+}
+
+const partesFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: TIMEZONE,
+  hourCycle: 'h23',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+});
+
+/** Instante (ISO, UTC) em que começa o dia `dia` no horário de Pimenta Bueno: para filtrar o banco. */
+export function inicioDoDia(dia: string): string {
+  const [y, m, d] = dia.split('-').map(Number) as [number, number, number];
+  const utc = Date.UTC(y, m - 1, d);
+  const p = Object.fromEntries(partesFormatter.formatToParts(new Date(utc)).map((x) => [x.type, Number(x.value)]));
+  const relogioLocal = Date.UTC(p.year!, p.month! - 1, p.day!, p.hour!, p.minute!, p.second!);
+  return new Date(utc - (relogioLocal - utc)).toISOString();
+}
+
+/** Dia da semana de uma data YYYY-MM-DD (0 = domingo … 6 = sábado). */
+export function diaDaSemana(dia: string): number {
+  const [y, m, d] = dia.split('-').map(Number) as [number, number, number];
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
 }
 
 const toUTC = (iso: string) => {

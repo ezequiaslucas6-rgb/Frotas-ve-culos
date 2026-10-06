@@ -320,7 +320,8 @@ describe('Storage do motorista', () => {
 const DIARIO = [
   'frente', 'traseira', 'lateral_esquerda', 'lateral_direita',
   'pneu_dianteiro_esquerdo', 'pneu_dianteiro_direito', 'pneu_traseiro_esquerdo', 'pneu_traseiro_direito',
-  'retrovisor_esquerdo', 'retrovisor_direito', 'nivel_oleo', 'fluido_freio', 'nivel_agua', 'painel', 'bancos',
+  'retrovisor_esquerdo', 'retrovisor_direito', 'retrovisor_esquerdo_carcaca', 'retrovisor_direito_carcaca',
+  'nivel_oleo', 'fluido_freio', 'nivel_agua', 'painel', 'bancos',
 ];
 const CK_1 = '40000000-0000-4000-8000-0000000000d1'; // feito pelo motorista M_1
 const CK_SUP_M1 = '40000000-0000-4000-8000-0000000000d2'; // feito pelo supervisor, motorista M_1
@@ -342,7 +343,7 @@ describe('checklist feito pelo motorista', () => {
     await as(DRV_1, async () => {
       await salvarChecklist(CK_1, V_1, M_1, 1600);
       expect(await ids('select id from public.checklists')).toEqual([CK_1]);
-      expect(await rows('select count(*)::int as n from public.checklist_fotos')).toEqual([{ n: 15 }]);
+      expect(await rows('select count(*)::int as n from public.checklist_fotos')).toEqual([{ n: 17 }]);
     });
     expect(await rows('select supervisor_id, motorista_id from public.checklists where id = $1', [CK_1])).toEqual([
       { supervisor_id: DRV_1, motorista_id: M_1 },

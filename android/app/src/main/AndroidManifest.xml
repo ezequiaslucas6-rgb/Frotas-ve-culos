@@ -5,6 +5,9 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- atualização do próprio APK pelo app (pergunta antes; o Android confirma a instalação) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- lembretes do checklist (08:00 e 08:30): notificação e reagendar depois de reiniciar o celular -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!--
       Sem a permissão CAMERA de propósito: as fotos usam o app de câmera do próprio celular
@@ -31,6 +34,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- lembretes do checklist: o alarme do horário e o reagendamento (reiniciar, atualizar, mudar a hora) -->
+        <receiver
+            android:name=".LembreteReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
 
         <!-- fotos tiradas pela câmera ficam no cache do app até o upload -->
         <provider

@@ -1,10 +1,10 @@
 import {
   Building2,
+  CalendarCheck,
   Camera,
   CarFront,
   ClipboardCheck,
   LayoutDashboard,
-  Receipt,
   Truck,
   UserCog,
   UserRound,
@@ -12,6 +12,7 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
+import { BombaCombustivel } from '@/components/icones/bomba-combustivel';
 import type { Tables } from '@/types/database';
 
 type Papel = Tables<'profiles'>['role'];
@@ -31,10 +32,11 @@ const GESTAO: Papel[] = ['admin', 'supervisor'];
 export const NAV_ITEMS: NavItem[] = [
   { href: '/meu-veiculo', label: 'Meu veículo', icon: CarFront, papeis: ['motorista'] },
   { href: '/dashboard', label: 'Painel', icon: LayoutDashboard, papeis: GESTAO },
+  { href: '/checklists/hoje', label: 'Checklist de hoje', curto: 'Hoje', icon: CalendarCheck, papeis: GESTAO },
   { href: '/checklists', label: 'Checklists', icon: ClipboardCheck, papeis: ['admin', 'supervisor', 'motorista'] },
   { href: '/veiculos', label: 'Veículos', icon: Truck, papeis: GESTAO },
   { href: '/motoristas', label: 'Motoristas', icon: Users, papeis: GESTAO },
-  { href: '/abastecimentos', label: 'Abastecimentos', curto: 'Histórico', icon: Receipt, papeis: ['admin', 'supervisor', 'motorista'] },
+  { href: '/abastecimentos', label: 'Abastecimentos', curto: 'Histórico', icon: BombaCombustivel, papeis: ['admin', 'supervisor', 'motorista'] },
   { href: '/manutencoes', label: 'Manutenções', curto: 'Manutenção', icon: Wrench, papeis: GESTAO },
   { href: '/filiais', label: 'Filiais', icon: Building2, papeis: ['admin'] },
   { href: '/supervisores', label: 'Supervisores', icon: UserCog, papeis: ['admin'] },

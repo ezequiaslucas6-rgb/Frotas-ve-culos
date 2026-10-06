@@ -15,7 +15,7 @@ import { FormMessage, SubmitButton } from '@/components/ui/form-feedback';
 import { Input, Select, Textarea } from '@/components/ui/input';
 import { useServerForm } from '@/hooks/use-server-form';
 import { COMBUSTIVEIS, formatPrecoLitro, parseDecimalBR, type Combustivel } from '@/lib/abastecimento/consumo';
-import { calcularValores, conferirPlaca, paraCampo, type RegistroLeitura } from '@/lib/abastecimento/cupom';
+import { calcularValores, conferirKmCupom, conferirPlaca, paraCampo, type RegistroLeitura } from '@/lib/abastecimento/cupom';
 import { addDays } from '@/lib/dates';
 import { formatBRL, formatKm, formatNumber } from '@/lib/format';
 import { formatPlaca } from '@/lib/validators/documentos';
@@ -45,6 +45,13 @@ interface AbastecimentoFormProps {
 const SALTO_SUSPEITO = 3000;
 /** Data lida do cupom só é usada se for recente (evita ano/mês trocados). */
 const DIAS_DATA_CUPOM = 60;
+/** Resultado e quanto levou (ms). */
+async function cronometrar<T>(fn: () => Promise<T>): Promise<[T, number]> {
+  const inicio = performance.now();
+  const r = await fn();
+  return [r, Math.round(performance.now() - inicio)];
+}
+
 const CODIGOS_SEM_NOVA_TENTATIVA = new Set(['sem_chave', 'chave_invalida', 'regiao', 'modelo', 'limite', 'limite_usuario']);
 
 export function AbastecimentoForm({ veiculos, motoristas, veiculoInicial, combustivelInicial, hoje, leituraAutomatica }: AbastecimentoFormProps) {
@@ -72,17 +79,16 @@ export function AbastecimentoForm({ veiculos, motoristas, veiculoInicial, combus
     desconto: descontoNum && Number.isFinite(descontoNum) ? descontoNum : 0,
   });
 
-  async function ler(caminho: string) {
+  async function ler(caminho: string, envio?: { preparo: number; envio: number }) {
     if (!veiculo) return;
     cupomAtual.current = caminho;
     setLeitura({ fase: 'lendo' });
     setRegistro(null);
-    let r: Awaited<ReturnType<typeof lerCupom>>;
-    try {
-      r = await lerCupom({ veiculoId: veiculo.id, caminho });
-    } catch {
-      r = { ok: false, codigo: 'rede', mensagem: 'Sem conexão para ler o cupom. Preencha à mão ou tente de novo.' };
-    }
+    const [r, leituraMs] = await cronometrar(() =>
+      lerCupom({ veiculoId: veiculo.id, caminho }).catch(
+        (): Awaited<ReturnType<typeof lerCupom>> => ({ ok: false, codigo: 'rede', mensagem: 'Sem conexão para ler o cupom. Preencha à mão ou tente de novo.' }),
+      ),
+    );
     if (cupomAtual.current !== caminho) return; // trocaram a foto enquanto lia
     if (!r.ok) {
       setLeitura({ fase: 'erro', mensagem: r.mensagem, podeTentar: !CODIGOS_SEM_NOVA_TENTATIVA.has(r.codigo) });
@@ -94,7 +100,10 @@ export function AbastecimentoForm({ veiculos, motoristas, veiculoInicial, combus
     const l = reg.leitura;
     // placa impressa (notas de convênio) tem de ser a do veículo escolhido
     const placa = conferirPlaca(l.placa, veiculo.placa);
-    const c = placa ? { ...r.calculo, conferencias: [...r.calculo.conferencias, placa], confiavel: r.calculo.confiavel && placa.ok } : r.calculo;
+    let c = placa ? { ...r.calculo, conferencias: [...r.calculo.conferencias, placa], confiavel: r.calculo.confiavel && placa.ok } : r.calculo;
+    // KM impresso é digitado pelo frentista (e pode ser mal lido): só entra se combinar com o veículo
+    const kmCupom = conferirKmCupom(l.km, veiculo.km_atual);
+    if (kmCupom.aviso) c = { ...c, avisos: [...c.avisos, kmCupom.aviso], confiavel: false };
     const preenchidos: string[] = [];
     if (c.litros) {
       setLitros(paraCampo(c.litros, 3));
@@ -117,12 +126,18 @@ export function AbastecimentoForm({ veiculos, motoristas, veiculoInicial, combus
       setPosto(l.posto.slice(0, 120));
       preenchidos.push('posto');
     }
-    if (l.km && !km) {
-      setKm(String(l.km));
+    if (kmCupom.km && !km) {
+      setKm(String(kmCupom.km));
       preenchidos.push('KM');
     }
     setRegistro(reg);
-    setLeitura({ fase: 'pronta', calculo: c, preenchidos });
+    setLeitura({
+      fase: 'pronta',
+      calculo: c,
+      preenchidos,
+      tempos: { preparo: envio?.preparo, envio: envio?.envio, leitura: leituraMs, ia: r.tempos?.ia },
+      modelo: reg.modelo,
+    });
   }
 
   return (
@@ -205,11 +220,11 @@ export function AbastecimentoForm({ veiculos, motoristas, veiculoInicial, combus
                     ? 'Fotografe o cupom inteiro, de perto e sem reflexo: os valores são lidos sozinhos.'
                     : 'Fotografe o cupom inteiro, de perto e sem reflexo.'
               }
-              onEnviado={(caminho) => {
+              onEnviado={(caminho, tempos) => {
                 cupomAtual.current = caminho;
                 setRegistro(null);
                 setLeitura(null);
-                if (caminho && leituraAutomatica) void ler(caminho);
+                if (caminho && leituraAutomatica) void ler(caminho, tempos);
               }}
             />
             {leitura ? (
@@ -233,7 +248,11 @@ export function AbastecimentoForm({ veiculos, motoristas, veiculoInicial, combus
             htmlFor="km"
             required
             error={fieldError('km')}
-            hint={veiculo ? `Último registrado: ${formatKm(veiculo.km_atual)}` : undefined}
+            hint={
+              veiculo
+                ? `Último registrado: ${formatKm(veiculo.km_atual)}${registro?.leitura.km ? ` · no cupom: ${formatKm(registro.leitura.km)}` : ''}`
+                : undefined
+            }
           >
             <Input
               id="km"

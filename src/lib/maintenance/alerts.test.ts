@@ -66,7 +66,7 @@ describe('avaliarSaudeVeiculo', () => {
   const base = { ultimoChecklistStatus: null, ultimoChecklistEm: null, ultimaCorretivaEm: null, alerta: 'ok' as const };
 
   it('liberado sem pendências', () => {
-    expect(avaliarSaudeVeiculo(base)).toEqual({ saude: 'liberado', motivos: [], naoLiberado: false });
+    expect(avaliarSaudeVeiculo(base)).toEqual({ saude: 'liberado', motivos: [], naoLiberado: false, bloqueio: null });
     expect(avaliarSaudeVeiculo({ ...base, ultimoChecklistStatus: 'ok', ultimoChecklistEm: '2026-03-01T12:00:00Z' }).saude).toBe('liberado');
   });
 
@@ -95,17 +95,38 @@ describe('avaliarSaudeVeiculo', () => {
     expect(r.motivos).toHaveLength(2);
   });
 
+  describe('checklist semanal e diário', () => {
+    it('semanal atrasado (seg–sex sem o do fim de semana) => não liberado', () => {
+      const r = avaliarSaudeVeiculo({ ...base, semanal: 'atrasado' });
+      expect(r).toMatchObject({ saude: 'manutencao', naoLiberado: true, bloqueio: 'semanal' });
+      expect(r.motivos).toContain('Não liberado: checklist semanal do fim de semana não feito');
+    });
+
+    it('sábado ou domingo sem o semanal => atenção (ainda liberado)', () => {
+      expect(avaliarSaudeVeiculo({ ...base, semanal: 'fazer' })).toMatchObject({ saude: 'atencao', naoLiberado: false, bloqueio: null });
+    });
+
+    it('sem checklist diário e não liberado pelo supervisor => não liberado hoje', () => {
+      expect(avaliarSaudeVeiculo({ ...base, diaria: 'nao_liberado' })).toMatchObject({ saude: 'manutencao', naoLiberado: true, bloqueio: 'diario' });
+      expect(avaliarSaudeVeiculo({ ...base, diaria: 'decidir' })).toMatchObject({ saude: 'liberado', naoLiberado: false });
+    });
+
+    it('a avaria tem prioridade como motivo', () => {
+      expect(avaliarSaudeVeiculo({ ...base, bloqueado: true, semanal: 'atrasado', diaria: 'nao_liberado' }).bloqueio).toBe('avaria');
+    });
+  });
+
   describe('avaria crítica com bloqueio (não liberado)', () => {
     const critico = { ...base, ultimoChecklistStatus: 'critico' as const, ultimoChecklistEm: '2026-03-05T15:00:00Z' };
 
     it('bloqueio aberto => não liberado (vermelho), com um único motivo', () => {
       const r = avaliarSaudeVeiculo({ ...critico, bloqueado: true, manutencoesAbertas: 1 });
-      expect(r).toEqual({ saude: 'manutencao', motivos: ['Não liberado: avaria crítica no checklist'], naoLiberado: true });
+      expect(r).toEqual({ saude: 'manutencao', motivos: ['Não liberado: avaria crítica no checklist'], naoLiberado: true, bloqueio: 'avaria' });
     });
 
     it('liberado pelo responsável depois do checklist, conserto pendente => atenção', () => {
       const r = avaliarSaudeVeiculo({ ...critico, ultimaLiberacaoEm: '2026-03-05T18:00:00Z', manutencoesAbertas: 1 });
-      expect(r).toEqual({ saude: 'atencao', motivos: ['Conserto pendente'], naoLiberado: false });
+      expect(r).toEqual({ saude: 'atencao', motivos: ['Conserto pendente'], naoLiberado: false, bloqueio: null });
     });
 
     it('liberação ANTES do checklist crítico não vale para ele', () => {

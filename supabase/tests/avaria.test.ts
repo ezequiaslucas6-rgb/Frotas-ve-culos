@@ -19,7 +19,8 @@ const M_1 = '30000000-0000-4000-8000-000000000001';
 const DIARIO = [
   'frente', 'traseira', 'lateral_esquerda', 'lateral_direita',
   'pneu_dianteiro_esquerdo', 'pneu_dianteiro_direito', 'pneu_traseiro_esquerdo', 'pneu_traseiro_direito',
-  'retrovisor_esquerdo', 'retrovisor_direito', 'nivel_oleo', 'fluido_freio', 'nivel_agua', 'painel', 'bancos',
+  'retrovisor_esquerdo', 'retrovisor_direito', 'retrovisor_esquerdo_carcaca', 'retrovisor_direito_carcaca',
+  'nivel_oleo', 'fluido_freio', 'nivel_agua', 'painel', 'bancos',
 ];
 const ck = (n: number) => `40000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 

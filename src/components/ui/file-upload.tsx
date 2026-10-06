@@ -34,8 +34,8 @@ interface FileUploadProps {
   capture?: boolean;
   /** modo digitalização (cupom): recorta o papel, tira sombra e reforça o contraste */
   digitalizar?: boolean;
-  /** avisa quando um arquivo novo foi enviado (ou removido: null) */
-  onEnviado?: (path: string | null) => void;
+  /** avisa quando um arquivo novo foi enviado (ou removido: null), com o tempo de preparo e de envio */
+  onEnviado?: (path: string | null, tempos?: { preparo: number; envio: number }) => void;
 }
 
 type Phase = 'idle' | 'compressing' | 'uploading' | 'error';
@@ -83,6 +83,7 @@ export function FileUpload({
       return;
     }
     setError(null);
+    const inicio = performance.now();
     try {
       const pdf = file.type === 'application/pdf';
       if (!pdf && !file.type.startsWith('image/')) throw new Error('Formato não suportado. Envie imagem ou PDF.');
@@ -122,6 +123,7 @@ export function FileUpload({
       }
 
       setPhase('uploading');
+      const preparado = performance.now();
       const destino = `${pasta}/${arquivo}-${uuid()}.${ext}`;
       const storage = createClient().storage.from(bucket);
       const opcoes = { upsert: false, cacheControl: '31536000' }; // 1 ano: o nome nunca é reutilizado
@@ -133,7 +135,7 @@ export function FileUpload({
       if (uploadError) throw new Error('Falha no envio. Verifique a conexão e tente novamente.');
 
       setPath(destino);
-      onEnviado?.(destino);
+      onEnviado?.(destino, { preparo: Math.round(preparado - inicio), envio: Math.round(performance.now() - preparado) });
       setIsPdf(pdf);
       setFileInfo(info);
       setPreviewUrl((old) => {

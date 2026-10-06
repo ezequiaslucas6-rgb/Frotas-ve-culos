@@ -1,4 +1,5 @@
-import { Fuel, Receipt, TriangleAlert } from 'lucide-react';
+import { Receipt, TriangleAlert } from 'lucide-react';
+import { BombaCombustivel } from '@/components/icones/bomba-combustivel';
 import { Badge } from '@/components/ui/badge';
 import {
   combustivelLabel,
@@ -62,7 +63,7 @@ export function ListaAbastecimentos({
         return (
           <li key={a.id} className="flex items-start gap-3 py-3.5">
             <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl bg-icone/15 text-icone">
-              <Fuel className="size-[18px]" />
+              <BombaCombustivel className="size-[18px]" />
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex items-baseline justify-between gap-3">

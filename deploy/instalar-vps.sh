@@ -143,9 +143,14 @@ if ! grep -qE '^GEMINI_API_KEY=' .env; then
 # Leitura automática do cupom de abastecimento (opcional). Chave gratuita em
 # https://aistudio.google.com/apikey — fica só no servidor. Sem ela, o lançamento é digitado à mão.
 GEMINI_API_KEY=
-GEMINI_MODELOS=gemini-flash-lite-latest,gemini-flash-latest
+GEMINI_MODELOS=gemini-flash-latest,gemini-flash-lite-latest
 EOF
   ok "Acrescentado GEMINI_API_KEY ao .env (leitura automática do cupom)"
+fi
+# a ordem antiga (Lite primeiro) lia dígitos miúdos errado: passa para o Flash primeiro
+if grep -qxF 'GEMINI_MODELOS=gemini-flash-lite-latest,gemini-flash-latest' .env; then
+  sed -i 's/^GEMINI_MODELOS=gemini-flash-lite-latest,gemini-flash-latest$/GEMINI_MODELOS=gemini-flash-latest,gemini-flash-lite-latest/' .env
+  ok "Leitura do cupom: modelo Flash primeiro (lê melhor os números)"
 fi
 if grep -qE '^GEMINI_API_KEY=.+' .env; then
   ok "Leitura automática do cupom: ligada"

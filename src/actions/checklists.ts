@@ -137,6 +137,8 @@ export async function salvarChecklist(input: unknown): Promise<SalvarChecklistRe
 
   revalidatePath('/dashboard');
   revalidatePath('/checklists');
+  revalidatePath('/checklists/hoje');
+  revalidatePath('/veiculos');
   revalidatePath(`/veiculos/${veiculo.id}`);
   revalidatePath('/meu-veiculo');
 

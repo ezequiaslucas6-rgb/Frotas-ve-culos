@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calcularCupom, calcularValores, type LeituraCupom } from './cupom';
+import { calcularCupom, calcularValores, variantesDeUmDigito, type LeituraCupom } from './cupom';
 
 const base: LeituraCupom = {
   legivel: true,
@@ -66,10 +66,18 @@ describe('leitura do cupom', () => {
     expect(c.conferencias[0]!.texto).toMatch(/R\$\s280,53/);
   });
 
-  it('valor a pagar que não bate com total − desconto', () => {
-    const c = calcularCupom({ ...base, litros: 45.32, preco_unitario: 6.19, valor_item: 280.53, desconto_nota: 13.6, valor_a_pagar: 266.39 });
+  it('valor a pagar que não bate com total − desconto (e não é um dígito trocado)', () => {
+    const c = calcularCupom({ ...base, litros: 45.32, preco_unitario: 6.19, valor_item: 280.53, desconto_nota: 13.6, valor_a_pagar: 250 });
     expect(c.conferencias.map((x) => x.ok)).toEqual([true, false]);
+    expect(c.correcoes).toEqual([]);
     expect(c.confiavel).toBe(false);
+  });
+
+  it('valor a pagar com dois dígitos invertidos (266,39 em vez de 266,93): corrigido e marcado para conferir', () => {
+    const c = calcularCupom({ ...base, litros: 45.32, preco_unitario: 6.19, valor_item: 280.53, desconto_nota: 13.6, valor_a_pagar: 266.39 });
+    expect(c.correcoes).toEqual([{ campo: 'liquido', lido: 266.39, corrigido: 266.93 }]);
+    expect(c).toMatchObject({ valorAPagar: 266.93, valorLiquido: 266.93, confiavel: false });
+    expect(c.conferencias.every((x) => x.ok)).toBe(true);
   });
 
   it('nota com outros produtos: desconto da nota dividido pelo valor do combustível', () => {
@@ -230,6 +238,49 @@ describe('modelos de nota da frota', () => {
     expect(c.avisos[0]).toMatch(/já era o valor com desconto/);
   });
 
+  it('DANFE com 40,35 L lido como 45,35 L (foto enviada): a quantidade é corrigida pelas contas da nota', () => {
+    const c = calcularCupom({ ...danfe, litros: 45.35 });
+    expect(c.correcoes).toEqual([{ campo: 'litros', lido: 45.35, corrigido: 40.35 }]);
+    expect(c).toMatchObject({ litros: 40.35, valorBruto: 326.03, desconto: 36.32, valorLiquido: 289.71, unitarioComDesconto: 7.18, confiavel: false });
+    expect(c.conferencias.every((x) => x.ok)).toBe(true);
+    expect(c.avisos[0]).toBe(
+      'Quantidade corrigida para 40,35 L (a leitura deu 45,35 L): 40,35 L × R$\u00a08,08 = R$\u00a0326,03, o valor total da nota. Confira na foto.',
+    );
+  });
+
+  it('DANFE com o preço da bomba lido errado (8,03 em vez de 8,08): corrigido', () => {
+    const c = calcularCupom({ ...danfe, preco_unitario: 8.03 });
+    expect(c.correcoes).toEqual([{ campo: 'preco', lido: 8.03, corrigido: 8.08 }]);
+    expect(c).toMatchObject({ litros: 40.35, precoBomba: 8.08, unitarioComDesconto: 7.18 });
+  });
+
+  it('DANFE com o desconto lido errado: o valor pago impresso duas vezes igual decide', () => {
+    const c = calcularCupom({ ...danfe, desconto_nota: 36.82 });
+    expect(c.correcoes).toEqual([{ campo: 'desconto', lido: 36.82, corrigido: 36.32 }]);
+    expect(c).toMatchObject({ desconto: 36.32, valorLiquido: 289.71, unitarioComDesconto: 7.18 });
+  });
+
+  it('valor total lido errado nas duas contas: corrigido só se a correção fecha as duas', () => {
+    const c = calcularCupom({ ...danfe, valor_total_nota: 386.03 });
+    expect(c.correcoes).toEqual([{ campo: 'valorBruto', lido: 386.03, corrigido: 326.03 }]);
+    expect(c).toMatchObject({ valorBruto: 326.03, valorLiquido: 289.71 });
+  });
+
+  it('quando mais de um número poderia estar errado, não adivinha', () => {
+    // desconto 36,82 ou valor pago 289,21? só um valor pago impresso: não dá para saber
+    const c = calcularCupom({ ...danfe, valor_liquido_item: null, desconto_nota: 36.82 });
+    expect(c.correcoes).toEqual([]);
+    expect(c.confiavel).toBe(false);
+    expect(c.avisos.join(' ')).toMatch(/não dá para saber qual/);
+    expect(c.conferencias.some((x) => !x.ok)).toBe(true);
+  });
+
+  it('dois erros na mesma nota não viram "correção": só a conferência falha', () => {
+    const c = calcularCupom({ ...danfe, litros: 45.35, preco_unitario: 7.08 });
+    expect(c.correcoes).toEqual([]);
+    expect(c.conferencias[0]).toMatchObject({ ok: false });
+  });
+
   it('Posto Forte (sem desconto): R$ 150,00 e R$ 7,60/L', () => {
     const c = calcularCupom(forte);
     expect(c).toMatchObject({ litros: 19.737, valorBruto: 150, desconto: 0, valorLiquido: 150, unitarioComDesconto: 7.6, confiavel: true });
@@ -251,5 +302,29 @@ describe('placa do cupom', () => {
     expect(conferirPlaca('QTG2489', 'ABC1D23')).toMatchObject({ ok: false });
     expect(conferirPlaca('QTG2489', 'ABC1D23')!.texto).toMatch(/placa no cupom é QTG2489, mas o veículo escolhido é ABC1D23/);
     expect(conferirPlaca(null, 'ABC1D23')).toBeNull();
+  });
+});
+
+describe('dígito lido errado', () => {
+  it('variantes: um dígito trocado ou dois vizinhos invertidos, sem zero à esquerda', () => {
+    const v = variantesDeUmDigito(45.35);
+    expect(v).toContain(40.35);
+    expect(v).toContain(45.53);
+    expect(v).toContain(54.35);
+    expect(v).not.toContain(45.35);
+    expect(v).not.toContain(5.35);
+    expect(variantesDeUmDigito(5.413, 2)).toContain(5.418);
+  });
+});
+
+describe('KM do cupom', () => {
+  it('só preenche se combinar com o último KM do veículo (212.855 lido como 252.855 não entra)', async () => {
+    const { conferirKmCupom } = await import('./cupom');
+    expect(conferirKmCupom(212855, 212300)).toEqual({ km: 212855, aviso: null });
+    const errado = conferirKmCupom(252855, 212300);
+    expect(errado.km).toBeNull();
+    expect(errado.aviso).toMatch(/KM no cupom \(252\.855\) não combina com o último registro do veículo \(212\.300\)/);
+    expect(conferirKmCupom(212000, 212300).km).toBeNull(); // abaixo do último registro
+    expect(conferirKmCupom(null, 212300)).toEqual({ km: null, aviso: null });
   });
 });

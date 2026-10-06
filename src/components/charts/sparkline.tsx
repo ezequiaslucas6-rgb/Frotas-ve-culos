@@ -15,6 +15,8 @@ interface SparklineProps {
   /** título acessível do gráfico */
   titulo: string;
   altura?: number;
+  /** cor da série (variável CSS); padrão: a cor primária */
+  cor?: string;
 }
 
 const W = 600; // viewBox; o SVG escala para a largura do card
@@ -22,7 +24,7 @@ const PAD_X = 12;
 const PAD_TOP = 14;
 
 /** Linha única (uma série: o título nomeia, sem legenda) com área suave, cruz e tooltip ao passar o mouse/dedo. */
-export function Sparkline({ pontos, titulo, altura = 190 }: SparklineProps) {
+export function Sparkline({ pontos, titulo, altura = 190, cor = 'var(--primary)' }: SparklineProps) {
   const gradId = useId();
   const svgRef = useRef<SVGSVGElement>(null);
   const [ativo, setAtivo] = useState<number | null>(null);
@@ -73,17 +75,17 @@ export function Sparkline({ pontos, titulo, altura = 190 }: SparklineProps) {
       >
         <defs>
           <linearGradient id={gradId} x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.28" />
-            <stop offset="100%" stopColor="var(--primary)" stopOpacity="0" />
+            <stop offset="0%" stopColor={cor} stopOpacity="0.28" />
+            <stop offset="100%" stopColor={cor} stopOpacity="0" />
           </linearGradient>
         </defs>
         <line x1={PAD_X} x2={W - PAD_X} y1={base} y2={base} stroke="var(--border)" strokeWidth="1" />
         <path d={area} fill={`url(#${gradId})`} />
-        <path d={linha} fill="none" stroke="var(--primary)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+        <path d={linha} fill="none" stroke={cor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
         {pos ? (
           <>
             <line x1={pos[0]} x2={pos[0]} y1={PAD_TOP - 6} y2={base} stroke="var(--muted-foreground)" strokeOpacity="0.5" strokeDasharray="3 4" vectorEffect="non-scaling-stroke" />
-            <circle cx={pos[0]} cy={pos[1]} r="6" fill="var(--primary)" stroke="var(--card)" strokeWidth="3" />
+            <circle cx={pos[0]} cy={pos[1]} r="6" fill={cor} stroke="var(--card)" strokeWidth="3" />
           </>
         ) : null}
       </svg>

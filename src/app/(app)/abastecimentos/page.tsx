@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { CircleCheck, Droplet, Fuel, Gauge, Plus, Receipt, ScanText } from 'lucide-react';
+import { ChartColumn, CircleCheck, Droplet, Gauge, Plus, Receipt, ScanText } from 'lucide-react';
+import { BombaCombustivel } from '@/components/icones/bomba-combustivel';
 import { excluirAbastecimento } from '@/actions/abastecimentos';
 import { ListaAbastecimentos } from '@/components/abastecimentos/lista-abastecimentos';
 import { FilialFilter } from '@/components/filial-filter';
@@ -10,7 +11,7 @@ import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { DeleteButton } from '@/components/ui/delete-button';
 import { EmptyState, PageHeader } from '@/components/ui/page-header';
-import { calcularConsumo, detectarConsumoAnormal, formatKmL, formatLitros, formatPrecoLitro } from '@/lib/abastecimento/consumo';
+import { calcularConsumo, ciclosConsumo, detectarConsumoAnormal, formatKmL, formatLitros, formatPrecoLitro } from '@/lib/abastecimento/consumo';
 import { requireSession } from '@/lib/auth';
 import { addDays, toISODate } from '@/lib/dates';
 import { formatBRL } from '@/lib/format';
@@ -96,8 +97,10 @@ export default async function AbastecimentosPage({ searchParams }: { searchParam
   const liquidos = itens.filter((a) => a.combustivel !== 'gnv');
   const totalLitros = liquidos.reduce((s, a) => s + Number(a.litros), 0);
   const precoMedio = totalLitros > 0 ? liquidos.reduce((s, a) => s + Number(a.valor_total), 0) / totalLitros : null;
-  const ciclos = Object.values(consumo);
-  const mediaKmL = ciclos.length ? ciclos.reduce((s, v) => s + v, 0) / ciclos.length : null;
+  // média ponderada dos ciclos que fecham no mês (km totais ÷ litros totais), como no resto do sistema
+  const ciclosDoMes = porVeiculo.flatMap((lista) => ciclosConsumo(lista)).filter((c) => doMes.has(c.id));
+  const litrosCiclos = ciclosDoMes.reduce((s, c) => s + c.litros, 0);
+  const mediaKmL = litrosCiclos > 0 ? ciclosDoMes.reduce((s, c) => s + c.distancia, 0) / litrosCiclos : null;
 
   const pagina = itens.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const urls = await signedUrlMap(supabase, 'abastecimentos', pagina.map((a) => a.comprovante_url));
@@ -110,6 +113,11 @@ export default async function AbastecimentosPage({ searchParams }: { searchParam
         description={`${nomeMes(mes)} · ${itens.length} lançamento(s)${motoristaFiltrado ? ` · ${motoristaFiltrado}` : ''}`}
         actions={
           <>
+            {!isMotorista ? (
+              <Link href="/abastecimentos/acompanhamento" className={buttonVariants({ variant: 'outline' })}>
+                <ChartColumn /> Acompanhamento
+              </Link>
+            ) : null}
             {isAdmin ? (
               <Link href="/abastecimentos/testar-leitura" className={buttonVariants({ variant: 'outline' })}>
                 <ScanText /> Testar leitura de cupons
@@ -154,13 +162,13 @@ export default async function AbastecimentosPage({ searchParams }: { searchParam
       <section aria-label="Resumo do mês" className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Resumo icone={<Receipt />} rotulo="Gasto no mês" valor={formatBRL(totalValor)} />
         <Resumo icone={<Droplet />} rotulo="Litros" valor={formatLitros(totalLitros)} />
-        <Resumo icone={<Fuel />} rotulo="Preço médio" valor={precoMedio ? `${formatPrecoLitro(precoMedio)}/L` : '—'} />
+        <Resumo icone={<BombaCombustivel />} rotulo="Preço médio" valor={precoMedio ? `${formatPrecoLitro(precoMedio)}/L` : '—'} />
         <Resumo icone={<Gauge />} rotulo="Consumo médio" valor={formatKmL(mediaKmL)} />
       </section>
 
       {itens.length === 0 ? (
         <EmptyState
-          icon={<Fuel />}
+          icon={<BombaCombustivel />}
           title="Nenhum abastecimento neste mês"
           description={isMotorista ? 'Toque em "Registrar abastecimento" logo após abastecer.' : undefined}
         />

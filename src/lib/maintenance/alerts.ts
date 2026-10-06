@@ -9,14 +9,16 @@
  *
  * Saúde do veículo (badge do painel):
  *   manutencao (vermelho) -> NÃO LIBERADO (avaria crítica no checklist, até o conserto ou a
- *                            liberação pelo responsável), último checklist crítico ainda não
- *                            tratado, ou revisão vencida
+ *                            liberação pelo responsável; checklist semanal do fim de semana não
+ *                            feito; ou sem checklist diário e não liberado pelo supervisor),
+ *                            último checklist crítico ainda não tratado, ou revisão vencida
  *   atencao    (amarelo)  -> conserto pendente (liberado pelo responsável), último checklist
  *                            com atenção ainda não tratado, ou revisão próxima
  *   liberado   (verde)    -> nenhum dos anteriores
  * "Tratado" = manutenção CORRETIVA concluída na data do checklist ou depois (ou, para a
  * avaria, a liberação do veículo depois do checklist).
  */
+import { situacaoDaView, situacaoDiaria, situacaoSemanal, type SituacaoDiaria, type SituacaoSemanal } from '@/lib/checklist/cobranca';
 import { addDays, diffDays, toISODate } from '@/lib/dates';
 import type { Enums } from '@/types/database';
 
@@ -94,15 +96,30 @@ export interface EntradaSaude {
   ultimaLiberacaoEm?: string | null;
   /** manutenções em aberto (conserto pendente) */
   manutencoesAbertas?: number;
+  /** checklist semanal do ciclo (sábado/domingo) */
+  semanal?: SituacaoSemanal;
+  /** checklist diário de hoje e a decisão do supervisor */
+  diaria?: SituacaoDiaria;
 }
+
+/** Por que o veículo não está liberado. */
+export type MotivoBloqueio = 'avaria' | 'semanal' | 'diario';
 
 export interface SaudeAvaliada {
   saude: SaudeVeiculo;
   /** Motivos legíveis para exibir ao usuário. */
   motivos: string[];
-  /** veículo bloqueado por avaria crítica: não deve rodar */
+  /** veículo não liberado (não deve rodar): avaria, semanal atrasado ou decisão do supervisor */
   naoLiberado: boolean;
+  /** o motivo do "não liberado" (null = liberado) */
+  bloqueio: MotivoBloqueio | null;
 }
+
+export const TEXTO_BLOQUEIO: Record<MotivoBloqueio, string> = {
+  avaria: 'Não liberado: avaria crítica no checklist',
+  semanal: 'Não liberado: checklist semanal do fim de semana não feito',
+  diario: 'Não liberado hoje: sem checklist diário (decisão do supervisor)',
+};
 
 export function avaliarSaudeVeiculo(entrada: EntradaSaude): SaudeAvaliada {
   const motivos: string[] = [];
@@ -112,10 +129,25 @@ export function avaliarSaudeVeiculo(entrada: EntradaSaude): SaudeAvaliada {
   };
 
   const { ultimoChecklistStatus: status, ultimoChecklistEm, ultimaCorretivaEm } = entrada;
-  const naoLiberado = Boolean(entrada.bloqueado);
-  if (naoLiberado) {
+  const avaria = Boolean(entrada.bloqueado);
+  const bloqueio: MotivoBloqueio | null = avaria
+    ? 'avaria'
+    : entrada.semanal === 'atrasado'
+      ? 'semanal'
+      : entrada.diaria === 'nao_liberado'
+        ? 'diario'
+        : null;
+  const naoLiberado = bloqueio != null;
+  if (bloqueio) {
     piorar('manutencao');
-    motivos.push('Não liberado: avaria crítica no checklist');
+    motivos.push(TEXTO_BLOQUEIO[bloqueio]);
+  }
+  if (!avaria && entrada.semanal === 'fazer') {
+    piorar('atencao');
+    motivos.push('Checklist semanal: fazer até domingo');
+  }
+  if (avaria) {
+    // a avaria já explica o estado do último checklist
   } else if (status && status !== 'ok' && ultimoChecklistEm) {
     const consertado = ultimaCorretivaEm != null && ultimaCorretivaEm >= toISODate(ultimoChecklistEm);
     // a liberação do veículo depois do checklist também resolve a avaria (o conserto pode ficar pendente)
@@ -132,7 +164,7 @@ export function avaliarSaudeVeiculo(entrada: EntradaSaude): SaudeAvaliada {
     }
   }
 
-  if (!naoLiberado && (entrada.manutencoesAbertas ?? 0) > 0) {
+  if (!avaria && (entrada.manutencoesAbertas ?? 0) > 0) {
     piorar('atencao');
     motivos.push('Conserto pendente');
   }
@@ -145,7 +177,7 @@ export function avaliarSaudeVeiculo(entrada: EntradaSaude): SaudeAvaliada {
     motivos.push('Revisão preventiva próxima');
   }
 
-  return { saude, motivos, naoLiberado };
+  return { saude, motivos, naoLiberado, bloqueio };
 }
 
 /** Atalho: dado um veículo da view do painel, devolve alerta + saúde. */
@@ -160,13 +192,21 @@ export function avaliarVeiculoPainel(
     bloqueio_id?: string | null;
     ultima_liberacao_em?: string | null;
     manutencoes_abertas?: number | null;
+    created_at?: string | null;
+    ultimo_semanal_em?: string | null;
+    ultimo_mensal_em?: string | null;
+    liberacao_diaria?: boolean | null;
   },
   hoje: string = toISODate(),
-): { alerta: AlertaRevisao } & SaudeAvaliada {
+  agora: Date | string | number = new Date(),
+): { alerta: AlertaRevisao; semanal: SituacaoSemanal; diaria: SituacaoDiaria } & SaudeAvaliada {
   const alerta = calcularAlertaRevisao(
     { kmAtual: v.km_atual, proximaRevisaoKm: v.proxima_revisao_km, proximaRevisaoData: v.proxima_revisao_data },
     hoje,
   );
+  const feitos = situacaoDaView(v, hoje);
+  const semanal = situacaoSemanal(feitos.semanal, hoje, v.created_at);
+  const diaria = situacaoDiaria(feitos.diario, v.liberacao_diaria, agora);
   const saude = avaliarSaudeVeiculo({
     ultimoChecklistStatus: v.ultimo_checklist_status,
     ultimoChecklistEm: v.ultimo_checklist_em,
@@ -175,6 +215,8 @@ export function avaliarVeiculoPainel(
     bloqueado: Boolean(v.bloqueio_id),
     ultimaLiberacaoEm: v.ultima_liberacao_em ?? null,
     manutencoesAbertas: v.manutencoes_abertas ?? 0,
+    semanal,
+    diaria,
   });
-  return { alerta, ...saude };
+  return { alerta, semanal, diaria, ...saude };
 }

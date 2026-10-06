@@ -1,10 +1,12 @@
 package br.com.gestaofrotas.app
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
 import android.view.View
@@ -96,12 +98,48 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        if (savedInstanceState == null || web.restoreState(savedInstanceState) == null) {
+        // tocou numa notificação de lembrete: abre direto a tela dela
+        val pedida = enderecoDoLembrete(intent)
+        if (pedida != null) {
+            web.loadUrl(pedida)
+        } else if (savedInstanceState == null || web.restoreState(savedInstanceState) == null) {
             web.loadUrl(urlInicial.toString())
         }
 
         atualizador = AtualizadorApk(this)
         atualizador.verificar()
+
+        // lembretes do checklist (08:00 e 08:30): agenda e pede a permissão de notificar (Android 13+)
+        Lembretes.criarCanal(this)
+        Lembretes.agendar(this)
+        pedirPermissaoDeNotificar()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        enderecoDoLembrete(intent)?.let { web.loadUrl(it) }
+    }
+
+    /** Endereço da tela do lembrete (só caminhos do próprio sistema). */
+    private fun enderecoDoLembrete(intent: Intent?): String? {
+        val caminho = intent?.getStringExtra(Lembretes.EXTRA_ABRIR) ?: return null
+        intent.removeExtra(Lembretes.EXTRA_ABRIR)
+        if (!caminho.startsWith("/") || caminho.startsWith("//")) return null
+        return BuildConfig.APP_URL.trimEnd('/') + caminho
+    }
+
+    private val permissaoDeNotificar =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { concedida ->
+            if (concedida) Lembretes.agendar(this)
+        }
+
+    /** Pergunta uma vez só (se a pessoa negar, os lembretes ficam desligados até ela ligar nas configurações). */
+    private fun pedirPermissaoDeNotificar() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || Lembretes.podeNotificar(this)) return
+        val prefs = getSharedPreferences("lembretes", MODE_PRIVATE)
+        if (prefs.getBoolean("permissao_pedida", false)) return
+        prefs.edit().putBoolean("permissao_pedida", true).apply()
+        permissaoDeNotificar.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     override fun onResume() {

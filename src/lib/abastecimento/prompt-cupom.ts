@@ -13,6 +13,7 @@ REGRAS GERAIS
 - Transcreva SOMENTE o que está impresso. Não calcule, não estime, não "corrija" a nota. Se um valor não aparece ou não dá para ler com certeza, use null.
 - Valores em reais: vírgula é decimal e ponto separa milhar ("1.234,56" = 1234.56; "40,00" = 40). Responda com números JSON (ponto decimal), sem "R$" e sem sinal de menos.
 - QUANTIDADE (litros): alguns sistemas imprimem a quantidade com PONTO como decimal: "5.413 LT" = 5.413 litros; "19.737 LT" = 19.737 litros. Outros usam vírgula: "40,3500" = 40.35. Um abastecimento tem de 1 a algumas centenas de litros, e quantidade × preço unitário dá o valor do item: use isso só para decidir onde está a vírgula.
+- DÍGITOS: leia cada número dígito por dígito. Em impressão fraca ou foto pequena, 0, 5, 6, 8 e 9, e também 1 e 7, se confundem. Quantidade × preço unitário tem de dar o valor do item, e o valor total − desconto tem de dar o valor pago: se não der, olhe de novo os dígitos na imagem e transcreva o que está realmente impresso (nunca ajuste um número para a conta fechar).
 - Se houver outro papel na foto (recibo manual, via do cartão, comprovante da bomba), use a nota fiscal (NFC-e ou NF-e).
 - Ignore: QR code, chave de acesso, protocolo, série, número da nota, "Qtde. Total de Itens", tributos ("Lei 12.741", "Tributos aprox.", "TRIB. APROX.", "V.APROX. TRIBUTOS", ICMS, "ICMS monofásico ... BC x,xx Vlr.ICMS Mono."), forma de pagamento, troco e valor recebido.
 - O posto é o EMITENTE (nome e CNPJ no topo). Não use o "CONSUMIDOR CNPJ" nem o "DESTINATÁRIO" (é a empresa que comprou).
@@ -46,7 +47,7 @@ CAMPOS
 - posto: nome do posto emitente (nome fantasia ou razão social no topo).
 - cnpj: CNPJ do posto emitente como impresso.
 - placa: placa do veículo, só se estiver impressa.
-- km: hodômetro/KM, só se estiver impresso e for maior que zero.
+- km: hodômetro/KM, só se estiver impresso e for maior que zero. Leia os dígitos com cuidado (é comparado com o hodômetro do veículo).
 - observacao: em poucas palavras, o que ficou duvidoso (ex.: "desconto ilegível", "foto cortada embaixo"); null se nada.`;
 
 const numero = (description: string) => ({ type: 'NUMBER', nullable: true, description });

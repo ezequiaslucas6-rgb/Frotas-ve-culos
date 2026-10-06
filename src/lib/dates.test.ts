@@ -16,3 +16,14 @@ describe('meses do filtro', () => {
     expect(mesesEntre('2000-01', '2026-10', 3)).toEqual(['2026-10', '2026-09', '2026-08']);
   });
 });
+
+describe('horário de Pimenta Bueno (UTC−4)', () => {
+  it('dia, hora e início do dia', async () => {
+    const { toISODate, horaLocal, inicioDoDia, diaDaSemana } = await import('./dates');
+    expect(toISODate('2026-10-15T03:30:00Z')).toBe('2026-10-14');
+    expect(toISODate('2026-10-15T04:00:00Z')).toBe('2026-10-15');
+    expect(horaLocal('2026-10-15T12:30:00Z')).toBe('08:30');
+    expect(inicioDoDia('2026-10-15')).toBe('2026-10-15T04:00:00.000Z');
+    expect(diaDaSemana('2026-10-10')).toBe(6);
+  });
+});

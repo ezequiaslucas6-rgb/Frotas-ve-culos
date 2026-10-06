@@ -49,7 +49,12 @@ export function AppShell({ userId, nome, papel, role, filialLabel, avatarUrl, ch
   const acao = ACAO_PRINCIPAL[role];
   const AcaoIcon = acao.icon;
   const home = items[0]?.href ?? '/';
-  const ativo = (href: string) => isActive(pathname, href, acao.href);
+  // só o item mais específico acende (em /checklists/hoje, não também "Checklists")
+  const maisEspecifico = items
+    .map((i) => i.href)
+    .filter((href) => isActive(pathname, href, acao.href))
+    .sort((a, b) => b.length - a.length)[0];
+  const ativo = (href: string) => href === maisEspecifico;
   const immersive = pathname.startsWith('/checklists/novo');
 
   return (

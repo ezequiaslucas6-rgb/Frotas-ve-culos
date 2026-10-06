@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import { Copy, ImagePlus, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { testarLeituraCupom, type ResultadoLeituraCupom } from '@/actions/cupom';
-import { LeituraCupom } from '@/components/abastecimentos/leitura-cupom';
+import { LeituraCupom, type TemposLeitura } from '@/components/abastecimentos/leitura-cupom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { combustivelLabel, type Combustivel } from '@/lib/abastecimento/consumo';
@@ -20,6 +20,7 @@ interface Teste {
   tamanho: string | null;
   estado: 'digitalizando' | 'lendo' | 'pronto';
   resultado?: ResultadoLeituraCupom;
+  tempos?: TemposLeitura;
 }
 
 /** Lê vários modelos de cupom em sequência, mostrando o que a IA entendeu de cada um. */
@@ -38,14 +39,18 @@ export function TestadorCupons({ modelos }: { modelos: string[] }) {
     for (const [i, arquivo] of arquivos.entries()) {
       const { id } = novos[i]!;
       try {
+        const t0 = performance.now();
         const { blob, originalSize } = await digitalizarCupom(arquivo);
         atualizar(id, { preview: URL.createObjectURL(blob), tamanho: `${formatBytes(originalSize)} → ${formatBytes(blob.size)}`, estado: 'lendo' });
+        const t1 = performance.now();
         const caminho = `testes-leitura/${uuid()}.jpg`;
         const { error } = await storage.upload(caminho, blob, { contentType: 'image/jpeg', upsert: false });
+        const t2 = performance.now();
         const resultado: ResultadoLeituraCupom = error
           ? { ok: false, codigo: 'envio', mensagem: 'Falha ao enviar a foto. Verifique a conexão.' }
           : await testarLeituraCupom(caminho);
-        atualizar(id, { estado: 'pronto', resultado });
+        const tempos: TemposLeitura = { preparo: Math.round(t1 - t0), envio: Math.round(t2 - t1), leitura: Math.round(performance.now() - t2) };
+        atualizar(id, { estado: 'pronto', resultado, tempos });
       } catch {
         atualizar(id, { estado: 'pronto', resultado: { ok: false, codigo: 'falha', mensagem: 'Não foi possível processar esta foto.' } });
       }
@@ -56,7 +61,11 @@ export function TestadorCupons({ modelos }: { modelos: string[] }) {
   const copiar = async () => {
     const dados = testes
       .filter((t) => t.resultado)
-      .map((t) => ({ arquivo: t.nome, ...(t.resultado!.ok ? { leitura: t.resultado!.registro, calculo: t.resultado!.calculo } : { erro: t.resultado!.mensagem }) }));
+      .map((t) => ({
+        arquivo: t.nome,
+        tempos: t.tempos,
+        ...(t.resultado!.ok ? { leitura: t.resultado!.registro, calculo: t.resultado!.calculo } : { erro: t.resultado!.mensagem }),
+      }));
     try {
       await navigator.clipboard.writeText(JSON.stringify(dados, null, 2));
       toast.success('Resultados copiados.');
@@ -125,7 +134,7 @@ export function TestadorCupons({ modelos }: { modelos: string[] }) {
                   <LeituraCupom estado={{ fase: 'lendo' }} unidade="L" onTentarDeNovo={() => undefined} />
                 ) : r.ok ? (
                   <LeituraCupom
-                    estado={{ fase: 'pronta', calculo: r.calculo, preenchidos: [], nota: `Lido por ${r.registro.modelo}.` }}
+                    estado={{ fase: 'pronta', calculo: r.calculo, preenchidos: [], nota: `Lido por ${r.registro.modelo}.`, tempos: t.tempos }}
                     unidade={l?.combustivel === 'gnv' ? 'm³' : 'L'}
                     onTentarDeNovo={() => undefined}
                   />

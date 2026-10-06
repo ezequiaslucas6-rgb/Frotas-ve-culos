@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ArrowRight, CircleCheck, ClipboardCheck, IdCard, Plus, TriangleAlert, Wrench } from 'lucide-react';
 import { AtualizarAlertasButton } from '@/components/atualizar-alertas-button';
+import { BombaCombustivel } from '@/components/icones/bomba-combustivel';
 import { CobrancaChecklists } from '@/components/painel/cobranca-checklists';
 import { Badge } from '@/components/ui/badge';
 import { Donut } from '@/components/charts/donut';
@@ -14,7 +15,7 @@ import { AlertaBadge, ChecklistStatusBadge, CnhBadge, SaudeBadge } from '@/compo
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { descreverAnomalia, detectarConsumoAnormal, formatKmL } from '@/lib/abastecimento/consumo';
 import { requireSession } from '@/lib/auth';
-import { inicioDaBusca, periodosCobranca, resumoCobranca, situacaoCobranca } from '@/lib/checklist/cobranca';
+import { periodosCobranca, resumoCobranca, situacaoDaView } from '@/lib/checklist/cobranca';
 import { tipoLabel } from '@/lib/checklist/etapas';
 import { addDays, toISODate } from '@/lib/dates';
 import { formatBRL, formatDateISO, formatDateTime, formatFilial, formatKm } from '@/lib/format';
@@ -70,11 +71,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     .or(`cnh_validade.is.null,cnh_validade.lte.${addDays(hoje, CNH_AVISO_DIAS)}`)
     .order('cnh_validade', { ascending: true, nullsFirst: false })
     .limit(50);
-  // cobrança: diário de hoje, semanal desde segunda, mensal desde o dia 1 (horário de Brasília)
-  let cobrancaQ = supabase
-    .from('checklists')
-    .select('veiculo_id, tipo, data_envio')
-    .gte('data_envio', `${inicioDaBusca(periodos)}T00:00:00-03:00`);
   let ultimosQ = supabase
     .from('checklists')
     .select('id, data_envio, tipo, status, veiculos(placa, modelo), motoristas(nome)')
@@ -85,14 +81,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     custosQ = custosQ.eq('filial_id', filialId);
     combustivelQ = combustivelQ.eq('filial_id', filialId);
     cnhQ = cnhQ.eq('filial_id', filialId);
-    cobrancaQ = cobrancaQ.eq('filial_id', filialId);
     ultimosQ = ultimosQ.eq('filial_id', filialId);
   }
 
   const [
     { data: veiculosRaw },
     { data: custos },
-    { data: cobranca },
     { data: ultimos },
     { data: filiais },
     { data: combustivel },
@@ -100,22 +94,24 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   ] = await Promise.all([
     veiculosQ,
     custosQ,
-    cobrancaQ,
     ultimosQ,
     isAdmin ? supabase.from('filiais').select('id, nome_cidade, uf').order('nome_cidade') : Promise.resolve({ data: null }),
     combustivelQ,
     cnhQ,
   ]);
 
-  const veiculos = (veiculosRaw ?? []).map((v) => ({ ...v, ...avaliarVeiculoPainel(v, hoje) }));
+  const agora = new Date();
+  const veiculos = (veiculosRaw ?? []).map((v) => ({ ...v, ...avaliarVeiculoPainel(v, hoje, agora) }));
   const total = veiculos.length;
   const conta = (s: string) => veiculos.filter((v) => v.saude === s).length;
   const liberados = conta('liberado');
   const atencao = conta('atencao');
   const manutencao = conta('manutencao');
-  // não liberados estão parados aguardando conserto: ficam fora da cobrança
-  const operando = veiculos.filter((v) => !v.naoLiberado);
-  const resumo = resumoCobranca(operando, situacaoCobranca(operando.map((v) => v.id), cobranca ?? [], hoje));
+  // parados por avaria aguardam conserto: ficam fora da cobrança (o semanal atrasado continua cobrado)
+  const operando = veiculos.filter((v) => v.bloqueio !== 'avaria');
+  const resumo = resumoCobranca(operando, new Map(operando.map((v) => [v.id, situacaoDaView(v, hoje)])));
+  const diarioADecidir = operando.filter((v) => v.diaria === 'decidir').length;
+  const semanalAtrasado = operando.filter((v) => v.semanal === 'atrasado').length;
 
   // consumo fora do padrão no último tanque (dos últimos 60 dias)
   const abastecimentosPorVeiculo = Map.groupBy(combustivel ?? [], (a) => a.veiculo_id);
@@ -124,7 +120,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     .filter((x): x is { v: (typeof veiculos)[number]; a: NonNullable<typeof x.a> } => x.a != null && x.a.data >= addDays(hoje, -60))
     .sort((x, y) => x.a.variacao - y.a.variacao);
 
-  // custo da frota por mês (manutenção + combustível, série única)
+  // custos por mês em duas séries SEPARADAS (manutenção x combustível), para não misturar
   const manutencaoMes = new Map(meses.map((m) => [m, 0]));
   const combustivelMes = new Map(meses.map((m) => [m, 0]));
   const somar = (mapa: Map<string, number>, data: string, valor: number) => {
@@ -133,20 +129,18 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   };
   for (const c of custos ?? []) somar(manutencaoMes, String(c.data_manutencao), Number(c.custo));
   for (const a of combustivel ?? []) somar(combustivelMes, String(a.data_abastecimento), Number(a.valor_total));
-  const serie: Ponto[] = meses.map((m) => {
-    const valor = (manutencaoMes.get(m) ?? 0) + (combustivelMes.get(m) ?? 0);
-    return {
-      rotulo: MESES[Number(m.slice(5)) - 1]!,
-      rotuloLongo: `${MESES_LONGOS[Number(m.slice(5)) - 1]}/${m.slice(0, 4)}`,
-      valor,
-      texto: formatBRL(valor),
-    };
-  });
+  const serieDe = (mapa: Map<string, number>): Ponto[] =>
+    meses.map((m) => {
+      const valor = mapa.get(m) ?? 0;
+      return {
+        rotulo: MESES[Number(m.slice(5)) - 1]!,
+        rotuloLongo: `${MESES_LONGOS[Number(m.slice(5)) - 1]}/${m.slice(0, 4)}`,
+        valor,
+        texto: formatBRL(valor),
+      };
+    });
   const mesAtual = meses.at(-1)!;
-  const custoMes = serie.at(-1)!.valor;
-  const custoAnterior = serie.at(-2)!.valor;
-  const variacao = custoAnterior > 0 ? ((custoMes - custoAnterior) / custoAnterior) * 100 : null;
-  const custo6m = serie.reduce((s, p) => s + p.valor, 0);
+  const nomeMesAtual = MESES_LONGOS[Number(mesAtual.slice(5)) - 1]!;
 
   const requerAtencao = veiculos
     .filter((v) => v.saude !== 'liberado')
@@ -203,28 +197,25 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </p>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-        <Card className="gap-2 px-6 pt-6 pb-4 lg:col-span-2">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <p className="text-sm text-muted-foreground">Custo da frota · {MESES_LONGOS[Number(mesAtual.slice(5)) - 1]}</p>
-              <p className="mt-1 text-4xl font-bold tracking-tight">{formatBRL(custoMes)}</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Manutenção {formatBRL(manutencaoMes.get(mesAtual) ?? 0)} · Combustível {formatBRL(combustivelMes.get(mesAtual) ?? 0)}
-              </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {variacao == null ? 'Sem lançamentos no mês anterior' : `${variacao >= 0 ? '+' : ''}${variacao.toFixed(0)}% em relação ao mês anterior`}
-              </p>
-            </div>
-            <div className="text-right">
-              <p className="text-xs text-muted-foreground">Últimos 6 meses</p>
-              <p className="text-lg font-semibold">{formatBRL(custo6m)}</p>
-            </div>
-          </div>
-          <Sparkline pontos={serie} titulo="Custo da frota (manutenção + combustível) por mês, últimos 6 meses" />
-        </Card>
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+        <CustoCard
+          titulo="Manutenção"
+          mes={nomeMesAtual}
+          serie={serieDe(manutencaoMes)}
+          cor="var(--serie-manutencao)"
+          icone={<Wrench />}
+          link={{ href: '/manutencoes', texto: 'Ver manutenções' }}
+        />
+        <CustoCard
+          titulo="Combustível"
+          mes={nomeMesAtual}
+          serie={serieDe(combustivelMes)}
+          cor="var(--serie-combustivel)"
+          icone={<BombaCombustivel />}
+          link={{ href: '/abastecimentos/acompanhamento', texto: 'Acompanhar abastecimentos' }}
+        />
 
-        <Card className="px-6 py-6">
+        <Card className="px-6 py-6 md:col-span-2 xl:col-span-1">
           <CardTitle>Saúde da frota</CardTitle>
           <Donut
             totalRotulo={total === 1 ? 'veículo' : 'veículos'}
@@ -294,7 +285,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-        <CobrancaChecklists resumo={resumo} periodos={periodos} foraDaCobranca={total - operando.length} className="lg:col-span-2" />
+        <CobrancaChecklists
+          resumo={resumo}
+          periodos={periodos}
+          foraDaCobranca={total - operando.length}
+          diarioADecidir={diarioADecidir}
+          semanalAtrasado={semanalAtrasado}
+          className="lg:col-span-2"
+        />
 
         <Card className="gap-3 px-6 py-6">
           <div className="flex items-center justify-between gap-2">
@@ -481,5 +479,55 @@ function StatTile({ valor, rotulo, pct, cor, icone }: { valor: number; rotulo: s
         </div>
       </div>
     </div>
+  );
+}
+
+/** Custo do mês de UMA categoria, com a variação e a série dos últimos 6 meses. */
+function CustoCard({
+  titulo,
+  mes,
+  serie,
+  cor,
+  icone,
+  link,
+}: {
+  titulo: string;
+  mes: string;
+  serie: Ponto[];
+  cor: string;
+  icone: React.ReactNode;
+  link: { href: string; texto: string };
+}) {
+  const atual = serie.at(-1)?.valor ?? 0;
+  const anterior = serie.at(-2)?.valor ?? 0;
+  const variacao = anterior > 0 ? ((atual - anterior) / anterior) * 100 : null;
+  const total = serie.reduce((s, p) => s + p.valor, 0);
+  return (
+    <Card className="gap-2 px-6 pt-6 pb-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span className="flex size-7 items-center justify-center rounded-lg [&_svg]:size-4" style={{ color: cor, background: `color-mix(in oklab, ${cor} 16%, transparent)` }}>
+              {icone}
+            </span>
+            {titulo} · {mes}
+          </p>
+          <p className="mt-2 text-3xl font-bold tracking-tight">{formatBRL(atual)}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {variacao == null ? 'Sem lançamentos no mês anterior' : `${variacao >= 0 ? '+' : ''}${variacao.toFixed(0)}% em relação ao mês anterior`}
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="text-xs text-muted-foreground">6 meses</p>
+          <p className="font-semibold">{formatBRL(total)}</p>
+        </div>
+      </div>
+      <div className="mt-auto">
+        <Sparkline pontos={serie} titulo={`Custo de ${titulo.toLowerCase()} por mês, últimos 6 meses`} altura={200} cor={cor} />
+      </div>
+      <Link href={link.href} className="mt-1 self-start text-xs font-semibold text-primary hover:underline">
+        {link.texto} →
+      </Link>
+    </Card>
   );
 }

@@ -7,7 +7,7 @@ import { requireAdmin, requireSession, resolveFilialId } from '@/lib/auth';
 import { addDays, toISODate } from '@/lib/dates';
 import { friendlyDbError } from '@/lib/db-errors';
 import { sincronizarAlertas } from '@/lib/maintenance/sync';
-import { flattenErrors, formDataToObject, liberarVeiculoSchema, veiculoSchema } from '@/lib/schemas';
+import { decisaoDiariaSchema, flattenErrors, formDataToObject, liberarVeiculoSchema, veiculoSchema } from '@/lib/schemas';
 
 /** Arquivos do veículo vivem em <filial_id>/... no bucket "veiculos". */
 const MOTORISTA_INVALIDO = 'O motorista responsável precisa ser da mesma filial do veículo.';
@@ -116,4 +116,27 @@ export async function liberarVeiculo(_prev: ActionState, formData: FormData): Pr
   revalidatePath(`/veiculos/${parsed.data.veiculo_id}`);
   revalidatePath('/meu-veiculo');
   return ok('Veículo liberado. O conserto continua pendente em Manutenções.');
+}
+
+/**
+ * Decisão do supervisor (ou admin) para o veículo SEM checklist diário hoje: liberado ou não
+ * para uso. "Não liberado" vale até o veículo fazer o checklist do dia. Pode mudar no mesmo dia.
+ */
+export async function decidirLiberacaoDiaria(dados: { veiculoId: string; liberado: boolean; observacao?: string }): Promise<ActionState> {
+  const { supabase } = await requireSession();
+  const parsed = decisaoDiariaSchema.safeParse(dados);
+  if (!parsed.success) return fail('Decisão inválida. Atualize a página e tente de novo.');
+  const { veiculoId, liberado, observacao } = parsed.data;
+  const { error } = await supabase.rpc('decidir_liberacao_diaria', {
+    p_veiculo_id: veiculoId,
+    p_liberado: liberado,
+    p_observacao: observacao || null,
+  });
+  if (error) return fail(friendlyDbError(error));
+  revalidatePath('/checklists/hoje');
+  revalidatePath('/dashboard');
+  revalidatePath('/veiculos');
+  revalidatePath(`/veiculos/${veiculoId}`);
+  revalidatePath('/meu-veiculo');
+  return ok(liberado ? 'Veículo liberado para uso hoje.' : 'Veículo não liberado até fazer o checklist do dia.');
 }

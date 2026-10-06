@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { CalendarClock, CarFront, CircleCheck, ClipboardCheck, ExternalLink, FileText, Fuel, Gauge, ShieldOff, TriangleAlert } from 'lucide-react';
+import { Ban, CalendarClock, CarFront, CircleCheck, ClipboardCheck, ExternalLink, FileText, Gauge, ShieldOff, TriangleAlert } from 'lucide-react';
+import { BombaCombustivel } from '@/components/icones/bomba-combustivel';
 import { ListaAbastecimentos } from '@/components/abastecimentos/lista-abastecimentos';
 import { Placa } from '@/components/placa';
 import { buttonVariants } from '@/components/ui/button';
@@ -10,9 +11,9 @@ import { AlertaBadge } from '@/components/ui/status-badges';
 import { AvisoBloqueio } from '@/components/veiculos/aviso-bloqueio';
 import { calcularConsumo, formatKmL } from '@/lib/abastecimento/consumo';
 import { requireMotorista } from '@/lib/auth';
-import { TIPOS_COBRANCA, inicioDaBusca, periodosCobranca, situacaoCobranca } from '@/lib/checklist/cobranca';
+import { PRAZO_DIARIO, TIPOS_COBRANCA, inicioDaBusca, periodosCobranca, situacaoCobranca, situacaoDiaria, situacaoSemanal, type SituacaoDiaria, type SituacaoSemanal } from '@/lib/checklist/cobranca';
 import { tipoLabel } from '@/lib/checklist/etapas';
-import { TIMEZONE, toISODate } from '@/lib/dates';
+import { TIMEZONE, diaDaSemana, inicioDoDia, toISODate } from '@/lib/dates';
 import { formatDateISO, formatKm } from '@/lib/format';
 import { calcularAlertaRevisao } from '@/lib/maintenance/alerts';
 import { descreverAlerta } from '@/lib/maintenance/describe';
@@ -34,11 +35,11 @@ export default async function MeuVeiculoPage() {
 
   // RLS: o motorista só recebe o próprio cadastro (se ativo), os veículos dele e os próprios lançamentos.
   const periodos = periodosCobranca(hoje);
-  const [{ data: eu }, { data: veiculos }, { data: abastecimentos }, { data: bloqueios }, { data: checklists }] = await Promise.all([
+  const [{ data: eu }, { data: veiculos }, { data: abastecimentos }, { data: bloqueios }, { data: checklists }, { data: decisoes }] = await Promise.all([
     supabase.from('motoristas').select('id, cnh_validade').maybeSingle(),
     supabase
       .from('veiculos')
-      .select('id, placa, marca, modelo, ano, km_atual, foto_geral_url, documento_url, proxima_revisao_km, proxima_revisao_data')
+      .select('id, placa, marca, modelo, ano, km_atual, foto_geral_url, documento_url, proxima_revisao_km, proxima_revisao_data, created_at')
       .order('placa'),
     supabase
       .from('abastecimentos')
@@ -48,8 +49,10 @@ export default async function MeuVeiculoPage() {
       .limit(60),
     // avaria crítica: veículo não liberado até o conserto ou a liberação do supervisor
     supabase.from('veiculo_bloqueios').select('veiculo_id, motivo, bloqueado_em, checklist_id').is('liberado_em', null),
-    // cobrança: diário de hoje, semanal da semana e mensal do mês (checklists feitos em seu nome)
-    supabase.from('checklists').select('veiculo_id, tipo, data_envio').gte('data_envio', `${inicioDaBusca(periodos)}T00:00:00-03:00`),
+    // cobrança: diário de hoje, semanal desde sábado e mensal do mês (checklists feitos em seu nome)
+    supabase.from('checklists').select('veiculo_id, tipo, data_envio').gte('data_envio', inicioDoDia(inicioDaBusca(periodos))),
+    // decisão do supervisor para hoje (veículo sem checklist diário depois das 08:30)
+    supabase.from('liberacoes_diarias').select('veiculo_id, liberado, observacao').eq('dia', hoje),
   ]);
 
   if (!eu) {
@@ -152,29 +155,52 @@ export default async function MeuVeiculoPage() {
                   const situacao = cobranca.get(v.id);
                   const bloqueado = (bloqueios ?? []).some((x) => x.veiculo_id === v.id);
                   if (!situacao || bloqueado) return null;
+                  const semanal = situacaoSemanal(situacao.semanal, hoje, v.created_at);
+                  const decisao = (decisoes ?? []).find((d) => d.veiculo_id === v.id);
+                  const diaria = situacaoDiaria(situacao.diario, decisao?.liberado ?? null);
                   return (
                     <div className="flex flex-col gap-2" aria-label="Checklists do período">
+                      <AvisoRotina veiculoId={v.id} semanal={semanal} diaria={diaria} observacao={decisao?.observacao ?? null} hoje={hoje} />
                       <p className="flex items-center gap-1.5 text-sm font-medium">
                         <ClipboardCheck className="size-4 text-icone" /> Checklists
                       </p>
                       <div className="grid grid-cols-3 gap-2">
-                        {TIPOS_COBRANCA.map((tipo) =>
-                          situacao[tipo] ? (
-                            <span key={tipo} className="flex flex-col items-center gap-0.5 rounded-xl bg-success/12 px-1 py-2 text-center text-xs font-semibold text-success-text">
-                              <CircleCheck className="size-4" />
-                              {tipoLabel(tipo)} feito
-                            </span>
-                          ) : (
+                        {TIPOS_COBRANCA.map((tipo) => {
+                          if (situacao[tipo]) {
+                            return (
+                              <span key={tipo} className="flex flex-col items-center gap-0.5 rounded-xl bg-success/12 px-1 py-2 text-center text-xs font-semibold text-success-text">
+                                <CircleCheck className="size-4" />
+                                {tipoLabel(tipo)} feito
+                              </span>
+                            );
+                          }
+                          // semanal só no sábado ou domingo (ou atrasado): fora disso, avisa o próximo
+                          if (tipo === 'semanal' && semanal === 'proximo') {
+                            return (
+                              <span key={tipo} className="flex flex-col items-center gap-0.5 rounded-xl bg-raised px-1 py-2 text-center text-xs font-semibold text-muted-foreground">
+                                <CalendarClock className="size-4" />
+                                Semanal sáb/dom
+                              </span>
+                            );
+                          }
+                          const urgente = (tipo === 'semanal' && semanal === 'atrasado') || (tipo === 'diario' && diaria === 'nao_liberado');
+                          return (
                             <Link
                               key={tipo}
                               href={`/checklists/novo?veiculo=${v.id}&tipo=${tipo}`}
-                              className="flex flex-col items-center gap-0.5 rounded-xl border border-primary/40 bg-primary/10 px-1 py-2 text-center text-xs font-semibold text-primary"
+                              className={cn(
+                                'flex flex-col items-center gap-0.5 rounded-xl border px-1 py-2 text-center text-xs font-semibold',
+                                urgente ? 'border-destructive/50 bg-destructive/10 text-destructive-text' : 'border-primary/40 bg-primary/10 text-primary',
+                              )}
                             >
                               <ClipboardCheck className="size-4" />
                               Fazer {tipoLabel(tipo).toLowerCase()}
+                              {tipo === 'diario' && diaria === 'aguardando' ? <span className="font-normal">até {PRAZO_DIARIO}</span> : null}
+                              {tipo === 'semanal' && semanal === 'fazer' ? <span className="font-normal">até domingo</span> : null}
+                              {urgente ? <span className="font-normal">não liberado</span> : null}
                             </Link>
-                          ),
-                        )}
+                          );
+                        })}
                       </div>
                     </div>
                   );
@@ -182,7 +208,7 @@ export default async function MeuVeiculoPage() {
 
                 <dl className="grid grid-cols-2 gap-3">
                   <Indicador icone={<Gauge />} rotulo="KM atual" valor={formatKm(v.km_atual)} />
-                  <Indicador icone={<Fuel />} rotulo="Seu consumo médio" valor={formatKmL(consumo)} />
+                  <Indicador icone={<BombaCombustivel />} rotulo="Seu consumo médio" valor={formatKmL(consumo)} />
                   <Indicador
                     icone={<CalendarClock />}
                     rotulo="Próxima revisão"
@@ -190,7 +216,7 @@ export default async function MeuVeiculoPage() {
                     detalhe={descreverAlerta(alerta, false)}
                   />
                   <Indicador
-                    icone={<Fuel />}
+                    icone={<BombaCombustivel />}
                     rotulo="Último abastecimento"
                     valor={ultimo ? formatDateISO(ultimo.data_abastecimento) : '—'}
                     detalhe={ultimo ? formatKm(ultimo.km) : 'Nenhum lançamento'}
@@ -199,7 +225,7 @@ export default async function MeuVeiculoPage() {
 
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <Link href={`/abastecimentos/novo?veiculo=${v.id}`} className={cn(buttonVariants({ size: 'lg' }), 'sm:flex-1')}>
-                    <Fuel /> Registrar abastecimento
+                    <BombaCombustivel /> Registrar abastecimento
                   </Link>
                   {doc ? (
                     <a href={doc} target="_blank" rel="noopener noreferrer" className={buttonVariants({ variant: 'outline', size: 'lg' })}>
@@ -240,5 +266,50 @@ function Indicador({ icone, rotulo, valor, detalhe }: { icone: React.ReactNode; 
       <dd className="text-[17px] leading-tight font-bold">{valor}</dd>
       {detalhe ? <dd className="text-xs text-muted-foreground">{detalhe}</dd> : null}
     </div>
+  );
+}
+
+/** Aviso do dia: semanal atrasado ou não liberado pelo supervisor (vermelho), semanal do fim de semana (amarelo). */
+function AvisoRotina({
+  veiculoId,
+  semanal,
+  diaria,
+  observacao,
+  hoje,
+}: {
+  veiculoId: string;
+  semanal: SituacaoSemanal;
+  diaria: SituacaoDiaria;
+  observacao: string | null;
+  hoje: string;
+}) {
+  const vermelho = semanal === 'atrasado' || diaria === 'nao_liberado';
+  if (!vermelho && semanal !== 'fazer') return null;
+  const tipo = semanal === 'atrasado' || (semanal === 'fazer' && diaria !== 'nao_liberado') ? 'semanal' : 'diario';
+  return (
+    <Link
+      href={`/checklists/novo?veiculo=${veiculoId}&tipo=${tipo}`}
+      role={vermelho ? 'alert' : 'status'}
+      className={cn(
+        'flex items-start gap-3 rounded-2xl px-4 py-3 text-sm',
+        vermelho ? 'bg-destructive/12 text-destructive-text' : 'bg-warning/15 text-warning-text',
+      )}
+    >
+      {vermelho ? <Ban className="mt-0.5 size-5 shrink-0" /> : <TriangleAlert className="mt-0.5 size-5 shrink-0" />}
+      <span>
+        <strong className="block">
+          {semanal === 'atrasado'
+            ? 'Veículo não liberado: falta o checklist semanal'
+            : diaria === 'nao_liberado'
+              ? 'Não liberado hoje pelo supervisor'
+              : `Hoje é dia do checklist semanal (${diaDaSemana(hoje) === 6 ? 'sábado' : 'domingo'})`}
+        </strong>
+        {semanal === 'atrasado'
+          ? 'Era para ser feito no fim de semana. Faça agora o checklist semanal para liberar o veículo.'
+          : diaria === 'nao_liberado'
+            ? `Faça o checklist diário para liberar o veículo.${observacao ? ` Supervisor: ${observacao}` : ''}`
+            : 'Obrigatório até domingo. Sem ele, o veículo fica não liberado a partir de segunda.'}
+      </span>
+    </Link>
   );
 }

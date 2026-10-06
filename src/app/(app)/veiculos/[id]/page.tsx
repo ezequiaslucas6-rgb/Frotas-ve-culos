@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { CalendarClock, ClipboardCheck, ExternalLink, FileText, Fuel, Gauge, Pencil, Plus, Truck, UserRound, Wrench } from 'lucide-react';
+import { Ban, CalendarClock, ClipboardCheck, ExternalLink, FileText, Gauge, Pencil, Plus, TriangleAlert, Truck, UserRound, Wrench } from 'lucide-react';
+import { BombaCombustivel } from '@/components/icones/bomba-combustivel';
 import { excluirVeiculo } from '@/actions/veiculos';
 import { ListaAbastecimentos } from '@/components/abastecimentos/lista-abastecimentos';
 import { Badge } from '@/components/ui/badge';
@@ -10,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DeleteButton } from '@/components/ui/delete-button';
 import { EmptyState, PageHeader } from '@/components/ui/page-header';
 import { AlertaBadge, ChecklistStatusBadge, SaudeBadge } from '@/components/ui/status-badges';
+import { DecisaoDiaria } from '@/components/painel/decisao-diaria';
 import { AvisoBloqueio } from '@/components/veiculos/aviso-bloqueio';
 import { calcularConsumo, descreverAnomalia, detectarConsumoAnormal, dicaAnomalia, formatKmL } from '@/lib/abastecimento/consumo';
 import { requireSession } from '@/lib/auth';
@@ -18,6 +20,7 @@ import { formatBRL, formatDateISO, formatDateTime, formatFilial, formatKm } from
 import { avaliarVeiculoPainel } from '@/lib/maintenance/alerts';
 import { descreverAlerta } from '@/lib/maintenance/describe';
 import { signedUrlMap } from '@/lib/storage';
+import { cn } from '@/lib/utils';
 import { formatPlaca } from '@/lib/validators/documentos';
 
 export const metadata: Metadata = { title: 'Veículo' };
@@ -102,6 +105,49 @@ export default async function VeiculoPage({ params }: { params: Promise<{ id: st
         consertoPendenteId={consertoPendente}
       />
 
+      {v.bloqueio === 'semanal' || v.bloqueio === 'diario' || v.semanal === 'fazer' || v.diaria === 'decidir' ? (
+        <section
+          role={v.naoLiberado ? 'alert' : 'status'}
+          className={cn(
+            'flex flex-col gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between',
+            v.naoLiberado ? 'border-destructive/40 bg-destructive/10' : 'border-warning/40 bg-warning/10',
+          )}
+        >
+          <div className="flex items-start gap-3">
+            {v.naoLiberado ? <Ban className="mt-0.5 size-5 shrink-0 text-destructive-text" /> : <TriangleAlert className="mt-0.5 size-5 shrink-0 text-warning-text" />}
+            <div>
+              <p className={cn('font-semibold', v.naoLiberado ? 'text-destructive-text' : 'text-warning-text')}>
+                {v.bloqueio === 'semanal'
+                  ? 'Não liberado: checklist semanal do fim de semana não feito'
+                  : v.bloqueio === 'diario'
+                    ? 'Não liberado hoje: sem checklist diário'
+                    : v.diaria === 'decidir'
+                      ? 'Sem checklist diário depois das 08:30'
+                      : 'Checklist semanal: fazer até domingo'}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {v.bloqueio === 'semanal'
+                  ? 'Libera assim que o checklist semanal for feito.'
+                  : v.bloqueio === 'diario'
+                    ? `Libera com o checklist diário ou com a sua decisão.${v.liberacao_diaria_obs ? ` Observação: ${v.liberacao_diaria_obs}` : ''}`
+                    : v.diaria === 'decidir'
+                      ? 'Decida se o veículo está liberado para uso hoje.'
+                      : 'Obrigatório no sábado ou domingo; sem ele, o veículo fica não liberado na segunda.'}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href={`/checklists/novo?veiculo=${v.id}&tipo=${v.bloqueio === 'semanal' || v.semanal === 'fazer' ? 'semanal' : 'diario'}`}
+              className={buttonVariants({ size: 'sm' })}
+            >
+              <ClipboardCheck /> Fazer checklist
+            </Link>
+            {v.diaria === 'decidir' || v.bloqueio === 'diario' ? <DecisaoDiaria veiculoId={v.id} decisao={v.liberacao_diaria} /> : null}
+          </div>
+        </section>
+      ) : null}
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         <Card className="overflow-hidden py-0">
           <div className="flex aspect-[4/3] items-center justify-center bg-muted text-muted-foreground">
@@ -173,9 +219,10 @@ export default async function VeiculoPage({ params }: { params: Promise<{ id: st
               </div>
               <div>
                 <dt className="flex items-center gap-1 text-muted-foreground">
-                  <Fuel className="size-4" /> Consumo médio
+                  <BombaCombustivel className="size-4" /> Consumo médio
                 </dt>
                 <dd className="font-semibold">{formatKmL(consumo.media)}</dd>
+                <dd className="text-xs text-muted-foreground">Tanque cheio a tanque cheio, só com o KM dos abastecimentos</dd>
               </div>
             </dl>
             {anomalias.ultima ? (

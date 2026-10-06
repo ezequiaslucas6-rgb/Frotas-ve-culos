@@ -8,8 +8,14 @@ import { gerarJsonDeImagem, iaConfigurada } from '@/lib/ia/gemini';
 import { ErroIA, MENSAGEM_ERRO_IA } from '@/lib/ia/gemini-resposta';
 import { criarCache, criarLimitador } from '@/lib/ia/limite';
 
+/** Quanto cada etapa levou no servidor (ms): baixar a foto e a leitura pela IA. */
+export interface TemposLeitura {
+  foto: number;
+  ia: number;
+}
+
 export type ResultadoLeituraCupom =
-  | { ok: true; registro: RegistroLeitura; calculo: CalculoCupom }
+  | { ok: true; registro: RegistroLeitura; calculo: CalculoCupom; tempos?: TemposLeitura }
   | { ok: false; codigo: string; mensagem: string };
 
 const limitador = criarLimitador({ porMinuto: 10, porDia: 80 });
@@ -73,12 +79,14 @@ export async function testarLeituraCupom(caminho: string): Promise<ResultadoLeit
 type ClienteSessao = Awaited<ReturnType<typeof requireSession>>['supabase'];
 
 async function lerDoStorage(supabase: ClienteSessao, caminho: string): Promise<ResultadoLeituraCupom> {
+  const inicio = Date.now();
   const { data: arquivo, error } = await supabase.storage.from('abastecimentos').download(caminho);
+  const foto = Date.now() - inicio;
   if (error || !arquivo) return { ok: false, codigo: 'foto', mensagem: 'Não foi possível abrir a foto do cupom. Envie novamente.' };
   if (arquivo.size > MAX_BYTES) return { ok: false, codigo: 'foto', mensagem: 'A foto do cupom é grande demais.' };
 
   try {
-    const { modelo, json } = await gerarJsonDeImagem({
+    const { modelo, json, ms } = await gerarJsonDeImagem({
       imagemBase64: Buffer.from(await arquivo.arrayBuffer()).toString('base64'),
       mimeType: 'image/jpeg',
       instrucoes: INSTRUCOES_CUPOM,
@@ -89,6 +97,7 @@ async function lerDoStorage(supabase: ClienteSessao, caminho: string): Promise<R
       ok: true,
       registro: { modelo, lido_em: new Date().toISOString(), leitura },
       calculo: calcularCupom(leitura),
+      tempos: { foto, ia: ms },
     };
   } catch (e) {
     if (e instanceof ErroIA) {

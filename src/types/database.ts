@@ -163,6 +163,23 @@ type VeiculoPainelRow = {
   bloqueio_manutencao_id: string | null;
   ultima_liberacao_em: string | null;
   manutencoes_abertas: number;
+  /** último semanal ou mensal (o mensal cobre o semanal) */
+  ultimo_semanal_em: string | null;
+  ultimo_mensal_em: string | null;
+  /** decisão de hoje para o veículo sem checklist diário (null = não decidido) */
+  liberacao_diaria: boolean | null;
+  liberacao_diaria_em: string | null;
+  liberacao_diaria_obs: string | null;
+};
+type LiberacaoDiariaRow = {
+  veiculo_id: string;
+  filial_id: string;
+  /** dia (YYYY-MM-DD) no horário de Pimenta Bueno */
+  dia: string;
+  liberado: boolean;
+  observacao: string | null;
+  decidido_por: string | null;
+  decidido_em: string;
 };
 type AbastecimentoRow = {
   id: string;
@@ -357,6 +374,27 @@ export type Database = {
           },
         ];
       };
+      liberacoes_diarias: {
+        Row: LiberacaoDiariaRow;
+        Insert: Ins<LiberacaoDiariaRow, 'veiculo_id' | 'filial_id' | 'dia' | 'liberado'>;
+        Update: Partial<LiberacaoDiariaRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'liberacoes_diarias_veiculo_fk';
+            columns: ['veiculo_id', 'filial_id'];
+            isOneToOne: false;
+            referencedRelation: 'veiculos';
+            referencedColumns: ['id', 'filial_id'];
+          },
+          {
+            foreignKeyName: 'liberacoes_diarias_decidido_por_fkey';
+            columns: ['decidido_por'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       checklist_itens: {
         Row: ChecklistItemRow;
         Insert: Ins<ChecklistItemRow, 'codigo' | 'nome' | 'grupo' | 'ordem'>;
@@ -436,6 +474,10 @@ export type Database = {
       };
       liberar_veiculo: {
         Args: { p_veiculo_id: string; p_motivo: string };
+        Returns: undefined;
+      };
+      decidir_liberacao_diaria: {
+        Args: { p_veiculo_id: string; p_liberado: boolean; p_observacao?: string | null };
         Returns: undefined;
       };
       atualizar_meu_perfil: {

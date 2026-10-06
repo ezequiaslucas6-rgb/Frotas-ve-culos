@@ -20,11 +20,12 @@ const V_RJ = '20000000-0000-4000-8000-000000000002';
 const M_SP = '30000000-0000-4000-8000-000000000001';
 const M_RJ = '30000000-0000-4000-8000-000000000002';
 
-// Modelo padrão do checklist DIÁRIO (migration 20260105): 15 fotos + a pergunta de vazamento/avaria
+// Modelo padrão do checklist DIÁRIO (migrations 20260105 e 20260109): 17 fotos + a pergunta de vazamento/avaria
 const DIARIO = [
   'frente', 'traseira', 'lateral_esquerda', 'lateral_direita',
   'pneu_dianteiro_esquerdo', 'pneu_dianteiro_direito', 'pneu_traseiro_esquerdo', 'pneu_traseiro_direito',
-  'retrovisor_esquerdo', 'retrovisor_direito', 'nivel_oleo', 'fluido_freio', 'nivel_agua', 'painel', 'bancos',
+  'retrovisor_esquerdo', 'retrovisor_direito', 'retrovisor_esquerdo_carcaca', 'retrovisor_direito_carcaca',
+  'nivel_oleo', 'fluido_freio', 'nivel_agua', 'painel', 'bancos',
 ] as const;
 const SEMANAL_EXTRA = ['luzes_sinalizacao', 'para_brisa', 'estepe', 'carroceria_portamalas'] as const;
 
@@ -203,13 +204,13 @@ describe('salvar_checklist (RPC atômica, validada pelo modelo do tipo)', () => 
     });
   });
 
-  it('exige todas as fotos do modelo (diário: 15) e não deixa lixo no banco', async () => {
+  it('exige todas as fotos do modelo (diário: 17) e não deixa lixo no banco', async () => {
     await as(SUP_SP, async () => {
-      await expect(salvar(CK, 'diario', V_SP, M_SP, 100, fotos(F_SP, CK).slice(0, 14))).rejects.toThrow(/diário exige 15 foto/);
+      await expect(salvar(CK, 'diario', V_SP, M_SP, 100, fotos(F_SP, CK).slice(0, 16))).rejects.toThrow(/diário exige 17 foto/);
       // foto de item que não é do modelo diário
       await expect(
         salvar(CK, 'diario', V_SP, M_SP, 100, [...fotos(F_SP, CK).slice(0, 14), ...fotos(F_SP, CK, {}, ['estepe'])]),
-      ).rejects.toThrow(/exige 15 foto/);
+      ).rejects.toThrow(/exige 17 foto/);
     });
     expect(await rows('select id from public.checklists')).toHaveLength(0);
   });
@@ -218,7 +219,7 @@ describe('salvar_checklist (RPC atômica, validada pelo modelo do tipo)', () => 
     const dup = fotos(F_SP, CK);
     dup[14] = { ...dup[0]! };
     await as(SUP_SP, async () => {
-      await expect(salvar(CK, 'diario', V_SP, M_SP, 100, dup)).rejects.toThrow(/exige 15 foto/);
+      await expect(salvar(CK, 'diario', V_SP, M_SP, 100, dup)).rejects.toThrow(/exige 17 foto/);
     });
   });
 
@@ -226,9 +227,9 @@ describe('salvar_checklist (RPC atômica, validada pelo modelo do tipo)', () => 
     const avaria = fotos(F_SP, CK, { vazamento_avaria: 'atencao' }, ['vazamento_avaria']);
     await as(SUP_SP, async () => {
       await expect(salvar(CK, 'diario', V_SP, M_SP, 100, fotos(F_SP, CK), {})).rejects.toThrow(/vazamento ou avaria\?.*Sim ou Não/);
-      await expect(salvar(CK, 'diario', V_SP, M_SP, 100, fotos(F_SP, CK), { vazamento_avaria: true })).rejects.toThrow(/exige 16 foto/);
+      await expect(salvar(CK, 'diario', V_SP, M_SP, 100, fotos(F_SP, CK), { vazamento_avaria: true })).rejects.toThrow(/exige 18 foto/);
       await expect(salvar(CK, 'diario', V_SP, M_SP, 100, [...fotos(F_SP, CK), ...avaria], { vazamento_avaria: false })).rejects.toThrow(
-        /exige 15 foto/,
+        /exige 17 foto/,
       );
       // avaria declarada não pode ficar "conforme"
       await expect(
@@ -246,7 +247,7 @@ describe('salvar_checklist (RPC atômica, validada pelo modelo do tipo)', () => 
         tipo: 'diario', status: 'critico', observacoes_gerais: 'Tudo certo', supervisor_id: SUP_SP, filial_id: F_SP,
         respostas: { vazamento_avaria: false },
       });
-      expect(await rows('select 1 from public.checklist_fotos where checklist_id = $1', [CK])).toHaveLength(15);
+      expect(await rows('select 1 from public.checklist_fotos where checklist_id = $1', [CK])).toHaveLength(17);
       const [v] = await rows<{ km_atual: number }>('select km_atual from public.veiculos where id = $1', [V_SP]);
       expect(v?.km_atual).toBe(1500);
       const [painel] = await rows<{ ultimo_checklist_status: string }>(
@@ -255,14 +256,14 @@ describe('salvar_checklist (RPC atômica, validada pelo modelo do tipo)', () => 
     });
   });
 
-  it('semanal com avaria declarada: 19 fotos + a foto da avaria; o KM nunca regride', async () => {
+  it('semanal com avaria declarada: 21 fotos + a foto da avaria; o KM nunca regride', async () => {
     const CK2 = '40000000-0000-4000-8000-000000000002';
     const itens = [...DIARIO, ...SEMANAL_EXTRA, 'vazamento_avaria'];
     await as(SUP_SP, async () => {
-      await expect(salvar(CK2, 'semanal', V_SP, M_SP, 900, fotos(F_SP, CK2), { vazamento_avaria: false })).rejects.toThrow(/semanal exige 19/);
+      await expect(salvar(CK2, 'semanal', V_SP, M_SP, 900, fotos(F_SP, CK2), { vazamento_avaria: false })).rejects.toThrow(/semanal exige 21/);
       await salvar(CK2, 'semanal', V_SP, M_SP, 900, fotos(F_SP, CK2, { vazamento_avaria: 'atencao' }, itens), { vazamento_avaria: true });
       expect(await rows('select tipo, status from public.checklists where id = $1', [CK2])).toEqual([{ tipo: 'semanal', status: 'atencao' }]);
-      expect(await rows('select 1 from public.checklist_fotos where checklist_id = $1', [CK2])).toHaveLength(20);
+      expect(await rows('select 1 from public.checklist_fotos where checklist_id = $1', [CK2])).toHaveLength(22);
       const [v] = await rows<{ km_atual: number }>('select km_atual from public.veiculos where id = $1', [V_SP]);
       expect(v?.km_atual).toBe(1500);
     });
@@ -292,7 +293,7 @@ describe('modelos de checklist', () => {
       const grupos = await rows<{ grupo: string }>('select distinct grupo from public.checklist_itens where ativo order by grupo');
       expect(grupos.map((g) => g.grupo)).toEqual(['Avarias', 'Cabine', 'Exterior', 'Motor e fluidos', 'Pneus', 'Retrovisores']);
       const total = await rows<{ tipo: string; n: number }>('select tipo::text, count(*)::int as n from public.checklist_modelo group by tipo order by tipo');
-      expect(total).toEqual([{ tipo: 'diario', n: 16 }, { tipo: 'mensal', n: 22 }, { tipo: 'semanal', n: 20 }]);
+      expect(total).toEqual([{ tipo: 'diario', n: 18 }, { tipo: 'mensal', n: 24 }, { tipo: 'semanal', n: 22 }]);
     });
     await expect(as(null, () => rows('select * from public.checklist_itens'))).rejects.toThrow(/permission denied/);
   });
