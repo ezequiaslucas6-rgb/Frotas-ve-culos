@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { fail, ok, type ActionState } from '@/lib/action-state';
 import { requireAdmin, requireSession } from '@/lib/auth';
+import { arred2, registroLeituraSchema } from '@/lib/abastecimento/cupom';
 import { toISODate } from '@/lib/dates';
 import { friendlyDbError } from '@/lib/db-errors';
 import { formatKm } from '@/lib/format';
@@ -21,7 +22,7 @@ export async function registrarAbastecimento(_prev: ActionState, formData: FormD
   const session = await requireSession({ motorista: true });
   const parsed = abastecimentoSchema.safeParse(formDataToObject(formData));
   if (!parsed.success) return fail('Corrija os campos destacados.', flattenErrors(parsed.error));
-  const { veiculo_id, motorista_id: motoristaEscolhido, comprovante_path, ...a } = parsed.data;
+  const { veiculo_id, motorista_id: motoristaEscolhido, comprovante_path, leitura_cupom, ...a } = parsed.data;
 
   // lido com a sessão: o motorista só enxerga os veículos dele; o supervisor, os da filial
   const { data: veiculo } = await session.supabase
@@ -50,6 +51,15 @@ export async function registrarAbastecimento(_prev: ActionState, formData: FormD
     return fail('Comprovante enviado para a pasta errada. Envie a foto novamente.');
   }
 
+  // o que a leitura da foto encontrou fica junto, só para conferência (se vier algo estranho, é ignorado)
+  let leitura: ReturnType<typeof registroLeituraSchema.parse> | null = null;
+  try {
+    const r = leitura_cupom ? registroLeituraSchema.safeParse(JSON.parse(leitura_cupom)) : null;
+    leitura = r?.success ? r.data : null;
+  } catch {
+    leitura = null;
+  }
+
   const { error } = await session.supabase.from('abastecimentos').insert({
     veiculo_id: veiculo.id,
     filial_id: veiculo.filial_id,
@@ -57,7 +67,11 @@ export async function registrarAbastecimento(_prev: ActionState, formData: FormD
     data_abastecimento: a.data_abastecimento,
     km: a.km,
     litros: a.litros,
-    valor_total: a.valor_total,
+    // valor líquido: o que foi pago (o preço por litro gravado já sai com desconto)
+    valor_bruto: a.valor_bruto,
+    desconto: a.desconto,
+    valor_total: arred2(a.valor_bruto - a.desconto),
+    leitura_cupom: leitura,
     combustivel: a.combustivel as Enums<'combustivel'>,
     tanque_cheio: a.tanque_cheio,
     posto: a.posto || null,

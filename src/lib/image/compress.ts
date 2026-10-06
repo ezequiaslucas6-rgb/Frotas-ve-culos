@@ -25,7 +25,8 @@ interface DecodedImage {
   release: () => void;
 }
 
-async function decode(file: Blob): Promise<DecodedImage> {
+/** Decodifica a imagem respeitando a orientação da câmera (também usado pela digitalização do cupom). */
+export async function decodificarImagem(file: Blob): Promise<DecodedImage> {
   // createImageBitmap respeita a orientação EXIF (foto "em pé" do celular)
   if (typeof createImageBitmap === 'function') {
     try {
@@ -52,7 +53,7 @@ export async function compressImage(
   file: File | Blob,
   { maxDimension = 1600, quality = 0.8 }: CompressOptions = {},
 ): Promise<CompressedImage> {
-  const image = await decode(file);
+  const image = await decodificarImagem(file);
   try {
     const scale = Math.min(1, maxDimension / Math.max(image.width, image.height));
     const width = Math.max(1, Math.round(image.width * scale));

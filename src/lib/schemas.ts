@@ -191,7 +191,14 @@ export const abastecimentoSchema = z
     data_abastecimento: isoDate,
     km: requiredInt(0, 'KM'),
     litros: decimal('a quantidade', 0.01, 5000),
-    valor_total: decimal('o valor total', 0.01, 99_999_999),
+    /** valor total do combustível no cupom (antes do desconto); o líquido é calculado no servidor */
+    valor_bruto: decimal('o valor total', 0.01, 99_999_999),
+    desconto: z.preprocess(
+      (v) => (v === '' || v == null ? 0 : parseDecimalBR(v)),
+      z.number('Desconto inválido.').refine(Number.isFinite, 'Desconto inválido.').min(0, 'O desconto não pode ser negativo.'),
+    ),
+    /** JSON com o que a leitura da foto encontrou (só para conferência) */
+    leitura_cupom: z.string().max(8000).optional(),
     combustivel: z.enum(COMBUSTIVEIS.map((c) => c.value) as [string, ...string[]], 'Selecione o combustível.'),
     tanque_cheio: checkbox,
     posto: z.string().trim().max(120).optional(),
@@ -201,6 +208,10 @@ export const abastecimentoSchema = z
   .refine((a) => a.data_abastecimento <= toISODate(), {
     path: ['data_abastecimento'],
     message: 'A data não pode ser no futuro.',
+  })
+  .refine((a) => a.desconto < a.valor_bruto, {
+    path: ['desconto'],
+    message: 'O desconto precisa ser menor que o valor total.',
   });
 
 export const perfilSchema = z.object({

@@ -28,7 +28,7 @@ export default async function MotoristaPage({ params }: { params: Promise<{ id: 
     supabase.from('veiculos').select('id, placa, marca, modelo, km_atual').eq('motorista_id', id).order('placa'),
     supabase
       .from('abastecimentos')
-      .select('id, veiculo_id, data_abastecimento, km, litros, valor_total, preco_litro, combustivel, tanque_cheio, posto, comprovante_url, veiculos(placa)')
+      .select('id, veiculo_id, data_abastecimento, km, litros, valor_total, preco_litro, desconto, combustivel, tanque_cheio, posto, comprovante_url, veiculos(placa)')
       .eq('motorista_id', id)
       .order('data_abastecimento', { ascending: false })
       .order('km', { ascending: false })

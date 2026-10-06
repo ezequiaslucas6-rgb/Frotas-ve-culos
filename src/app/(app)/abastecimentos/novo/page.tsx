@@ -4,6 +4,7 @@ import { EmptyState, PageHeader } from '@/components/ui/page-header';
 import type { Combustivel } from '@/lib/abastecimento/consumo';
 import { requireSession } from '@/lib/auth';
 import { toISODate } from '@/lib/dates';
+import { iaConfigurada } from '@/lib/ia/gemini';
 import type { SearchParams } from '@/lib/pagination';
 import { AbastecimentoForm } from './abastecimento-form';
 
@@ -29,7 +30,7 @@ export default async function NovoAbastecimentoPage({ searchParams }: { searchPa
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
       <PageHeader
         title="Registrar abastecimento"
-        description={isMotorista ? 'Lance logo após abastecer, com a foto do cupom.' : undefined}
+        description={isMotorista ? 'Lance logo após abastecer, com a foto do cupom.' : 'Comece pela foto do cupom.'}
       />
       {lista.length === 0 ? (
         <EmptyState
@@ -44,6 +45,7 @@ export default async function NovoAbastecimentoPage({ searchParams }: { searchPa
           veiculoInicial={pedido && lista.some((v) => v.id === pedido) ? pedido : null}
           combustivelInicial={(ultimo?.combustivel as Combustivel | undefined) ?? 'diesel_s10'}
           hoje={toISODate()}
+          leituraAutomatica={iaConfigurada()}
         />
       )}
     </div>

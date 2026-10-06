@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { CircleCheck, Droplet, Fuel, Gauge, Plus, Receipt } from 'lucide-react';
+import { CircleCheck, Droplet, Fuel, Gauge, Plus, Receipt, ScanText } from 'lucide-react';
 import { excluirAbastecimento } from '@/actions/abastecimentos';
 import { ListaAbastecimentos } from '@/components/abastecimentos/lista-abastecimentos';
 import { FilialFilter } from '@/components/filial-filter';
@@ -60,7 +60,7 @@ export default async function AbastecimentosPage({ searchParams }: { searchParam
   let query = supabase
     .from('abastecimentos')
     .select(
-      'id, veiculo_id, data_abastecimento, km, litros, valor_total, preco_litro, combustivel, tanque_cheio, posto, comprovante_url, veiculos(placa), motoristas(nome)',
+      'id, veiculo_id, data_abastecimento, km, litros, valor_total, preco_litro, desconto, combustivel, tanque_cheio, posto, comprovante_url, veiculos(placa), motoristas(nome)',
     )
     .gte('data_abastecimento', addDays(inicio, -120))
     .lt('data_abastecimento', `${proximoMes(mes)}-01`)
@@ -109,9 +109,16 @@ export default async function AbastecimentosPage({ searchParams }: { searchParam
         title={isMotorista ? 'Meus abastecimentos' : 'Abastecimentos'}
         description={`${nomeMes(mes)} · ${itens.length} lançamento(s)${motoristaFiltrado ? ` · ${motoristaFiltrado}` : ''}`}
         actions={
-          <Link href={veiculoId ? `/abastecimentos/novo?veiculo=${veiculoId}` : '/abastecimentos/novo'} className={buttonVariants()}>
-            <Plus /> Registrar abastecimento
-          </Link>
+          <>
+            {isAdmin ? (
+              <Link href="/abastecimentos/testar-leitura" className={buttonVariants({ variant: 'outline' })}>
+                <ScanText /> Testar leitura de cupons
+              </Link>
+            ) : null}
+            <Link href={veiculoId ? `/abastecimentos/novo?veiculo=${veiculoId}` : '/abastecimentos/novo'} className={buttonVariants()}>
+              <Plus /> Registrar abastecimento
+            </Link>
+          </>
         }
       />
 

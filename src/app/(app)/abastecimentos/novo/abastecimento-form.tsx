@@ -1,9 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Gauge, TriangleAlert } from 'lucide-react';
 import { registrarAbastecimento } from '@/actions/abastecimentos';
+import { lerCupom } from '@/actions/cupom';
+import { LeituraCupom, type EstadoLeitura } from '@/components/abastecimentos/leitura-cupom';
 import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -13,7 +15,9 @@ import { FormMessage, SubmitButton } from '@/components/ui/form-feedback';
 import { Input, Select, Textarea } from '@/components/ui/input';
 import { useServerForm } from '@/hooks/use-server-form';
 import { COMBUSTIVEIS, formatPrecoLitro, parseDecimalBR, type Combustivel } from '@/lib/abastecimento/consumo';
-import { formatKm, formatNumber } from '@/lib/format';
+import { calcularValores, paraCampo, type RegistroLeitura } from '@/lib/abastecimento/cupom';
+import { addDays } from '@/lib/dates';
+import { formatBRL, formatKm, formatNumber } from '@/lib/format';
 import { formatPlaca } from '@/lib/validators/documentos';
 
 interface VeiculoOpcao {
@@ -33,29 +37,94 @@ interface AbastecimentoFormProps {
   veiculoInicial: string | null;
   combustivelInicial: Combustivel;
   hoje: string;
+  /** leitura automática do cupom ligada no servidor (chave do Gemini) */
+  leituraAutomatica: boolean;
 }
 
 /** Diferença de KM que merece um aviso (provável erro de digitação). */
 const SALTO_SUSPEITO = 3000;
+/** Data lida do cupom só é usada se for recente (evita ano/mês trocados). */
+const DIAS_DATA_CUPOM = 60;
+const CODIGOS_SEM_NOVA_TENTATIVA = new Set(['sem_chave', 'chave_invalida', 'regiao', 'modelo', 'limite', 'limite_usuario']);
 
-export function AbastecimentoForm({ veiculos, motoristas, veiculoInicial, combustivelInicial, hoje }: AbastecimentoFormProps) {
+export function AbastecimentoForm({ veiculos, motoristas, veiculoInicial, combustivelInicial, hoje, leituraAutomatica }: AbastecimentoFormProps) {
   const { state, pending, onSubmit, fieldError } = useServerForm(registrarAbastecimento);
   const [veiculoId, setVeiculoId] = useState(veiculoInicial ?? (veiculos.length === 1 ? veiculos[0]!.id : ''));
+  const [data, setData] = useState(hoje);
   const [km, setKm] = useState('');
   const [litros, setLitros] = useState('');
-  const [valor, setValor] = useState('');
+  const [valorBruto, setValorBruto] = useState('');
+  const [desconto, setDesconto] = useState('');
+  const [posto, setPosto] = useState('');
   const [combustivel, setCombustivel] = useState<Combustivel>(combustivelInicial);
+  const [leitura, setLeitura] = useState<EstadoLeitura | null>(null);
+  const [registro, setRegistro] = useState<RegistroLeitura | null>(null);
+  const cupomAtual = useRef<string | null>(null);
   const veiculo = veiculos.find((v) => v.id === veiculoId);
 
   const kmNum = km === '' ? null : Number(km);
   const diferenca = veiculo && kmNum != null && Number.isFinite(kmNum) ? kmNum - veiculo.km_atual : null;
-  const litrosNum = parseDecimalBR(litros);
-  const valorNum = parseDecimalBR(valor);
-  const preco = litrosNum && valorNum && litrosNum > 0 ? valorNum / litrosNum : null;
   const unidade = combustivel === 'gnv' ? 'm³' : 'L';
+  const descontoNum = parseDecimalBR(desconto);
+  const valores = calcularValores({
+    litros: parseDecimalBR(litros),
+    valorBruto: parseDecimalBR(valorBruto),
+    desconto: descontoNum && Number.isFinite(descontoNum) ? descontoNum : 0,
+  });
+
+  async function ler(caminho: string) {
+    if (!veiculo) return;
+    cupomAtual.current = caminho;
+    setLeitura({ fase: 'lendo' });
+    setRegistro(null);
+    let r: Awaited<ReturnType<typeof lerCupom>>;
+    try {
+      r = await lerCupom({ veiculoId: veiculo.id, caminho });
+    } catch {
+      r = { ok: false, codigo: 'rede', mensagem: 'Sem conexão para ler o cupom. Preencha à mão ou tente de novo.' };
+    }
+    if (cupomAtual.current !== caminho) return; // trocaram a foto enquanto lia
+    if (!r.ok) {
+      setLeitura({ fase: 'erro', mensagem: r.mensagem, podeTentar: !CODIGOS_SEM_NOVA_TENTATIVA.has(r.codigo) });
+      return;
+    }
+
+    // preenche os campos com o que foi lido (a pessoa confere e corrige antes de registrar)
+    const { calculo: c, registro: reg } = r;
+    const l = reg.leitura;
+    const preenchidos: string[] = [];
+    if (c.litros) {
+      setLitros(paraCampo(c.litros, 3));
+      preenchidos.push('quantidade');
+    }
+    if (c.valorBruto) {
+      setValorBruto(paraCampo(c.valorBruto));
+      setDesconto(c.desconto > 0 ? paraCampo(c.desconto) : '');
+      preenchidos.push('valor total', 'desconto');
+    }
+    if (l.combustivel && l.combustivel !== 'outro') {
+      setCombustivel(l.combustivel);
+      preenchidos.push('combustível');
+    }
+    if (l.data && l.data <= hoje && l.data >= addDays(hoje, -DIAS_DATA_CUPOM)) {
+      setData(l.data);
+      preenchidos.push('data');
+    }
+    if (l.posto && !posto.trim()) {
+      setPosto(l.posto.slice(0, 120));
+      preenchidos.push('posto');
+    }
+    if (l.km && !km) {
+      setKm(String(l.km));
+      preenchidos.push('KM');
+    }
+    setRegistro(reg);
+    setLeitura({ fase: 'pronta', calculo: c, preenchidos });
+  }
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-5" noValidate>
+      <input type="hidden" name="leitura_cupom" value={registro ? JSON.stringify(registro) : ''} />
       <Card>
         <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {veiculos.length === 1 && veiculo ? (
@@ -71,7 +140,19 @@ export function AbastecimentoForm({ veiculos, motoristas, veiculoInicial, combus
             </div>
           ) : (
             <Field label="Veículo" htmlFor="veiculo_id" required error={fieldError('veiculo_id')} className="sm:col-span-2">
-              <Select id="veiculo_id" name="veiculo_id" value={veiculoId} onChange={(e) => setVeiculoId(e.target.value)} required>
+              <Select
+                id="veiculo_id"
+                name="veiculo_id"
+                value={veiculoId}
+                onChange={(e) => {
+                  // a foto do cupom é por veículo: trocar o veículo descarta a foto e a leitura
+                  setVeiculoId(e.target.value);
+                  cupomAtual.current = null;
+                  setLeitura(null);
+                  setRegistro(null);
+                }}
+                required
+              >
                 <option value="" disabled>
                   Selecione o veículo…
                 </option>
@@ -99,8 +180,49 @@ export function AbastecimentoForm({ veiculos, motoristas, veiculoInicial, combus
             </Field>
           ) : null}
 
+          {/* a foto vem primeiro: com a leitura automática, ela preenche os valores abaixo */}
+          <div className="flex flex-col gap-3 sm:col-span-2">
+            <FileUpload
+              key={veiculoId}
+              name="comprovante_path"
+              label="Foto do cupom / comprovante"
+              bucket="abastecimentos"
+              pasta={veiculo ? `${veiculo.filial_id}/${veiculo.id}` : null}
+              arquivo="cupom"
+              maxDimension={2200}
+              digitalizar
+              semPastaMsg="Selecione o veículo antes de enviar o comprovante."
+              accept="image/*"
+              capture
+              hint={
+                !veiculo
+                  ? 'Selecione o veículo primeiro.'
+                  : leituraAutomatica
+                    ? 'Fotografe o cupom inteiro, de perto e sem reflexo: os valores são lidos sozinhos.'
+                    : 'Fotografe o cupom inteiro, de perto e sem reflexo.'
+              }
+              onEnviado={(caminho) => {
+                cupomAtual.current = caminho;
+                setRegistro(null);
+                setLeitura(null);
+                if (caminho && leituraAutomatica) void ler(caminho);
+              }}
+            />
+            {leitura ? (
+              <LeituraCupom estado={leitura} unidade={unidade} onTentarDeNovo={() => cupomAtual.current && void ler(cupomAtual.current)} />
+            ) : null}
+          </div>
+
           <Field label="Data" htmlFor="data_abastecimento" required error={fieldError('data_abastecimento')}>
-            <Input id="data_abastecimento" name="data_abastecimento" type="date" defaultValue={hoje} max={hoje} required />
+            <Input
+              id="data_abastecimento"
+              name="data_abastecimento"
+              type="date"
+              value={data}
+              onChange={(e) => setData(e.target.value)}
+              max={hoje}
+              required
+            />
           </Field>
           <Field
             label="KM no hodômetro"
@@ -139,12 +261,12 @@ export function AbastecimentoForm({ veiculos, motoristas, veiculoInicial, combus
               ))}
             </Select>
           </Field>
-          <Field label={`Quantidade (${unidade})`} htmlFor="litros" required error={fieldError('litros')}>
+          <Field label={`Quantidade (${unidade})`} htmlFor="litros" required error={fieldError('litros')} className="sm:col-span-2">
             <Input
               id="litros"
               name="litros"
               inputMode="decimal"
-              placeholder="0,00"
+              placeholder="0,000"
               value={litros}
               onChange={(e) => setLitros(e.target.value)}
               required
@@ -153,22 +275,48 @@ export function AbastecimentoForm({ veiculos, motoristas, veiculoInicial, combus
           </Field>
           <Field
             label="Valor total (R$)"
-            htmlFor="valor_total"
+            htmlFor="valor_bruto"
             required
-            error={fieldError('valor_total')}
-            hint={preco && Number.isFinite(preco) ? `${formatPrecoLitro(preco)} por ${unidade}` : undefined}
+            error={fieldError('valor_bruto')}
+            hint={valores.precoBomba ? `Bomba: ${formatPrecoLitro(valores.precoBomba)}/${unidade}` : 'Como está no cupom, antes do desconto.'}
           >
             <Input
-              id="valor_total"
-              name="valor_total"
+              id="valor_bruto"
+              name="valor_bruto"
               inputMode="decimal"
               placeholder="0,00"
-              value={valor}
-              onChange={(e) => setValor(e.target.value)}
+              value={valorBruto}
+              onChange={(e) => setValorBruto(e.target.value)}
               required
-              aria-invalid={!!fieldError('valor_total')}
+              aria-invalid={!!fieldError('valor_bruto')}
             />
           </Field>
+          <Field label="Desconto (R$)" htmlFor="desconto" error={fieldError('desconto')} hint="Deixe em branco se não houve desconto.">
+            <Input
+              id="desconto"
+              name="desconto"
+              inputMode="decimal"
+              placeholder="0,00"
+              value={desconto}
+              onChange={(e) => setDesconto(e.target.value)}
+              aria-invalid={!!fieldError('desconto')}
+            />
+          </Field>
+
+          {/* as contas que antes eram feitas à mão */}
+          <dl aria-label="Valores calculados" className="grid grid-cols-2 gap-3 rounded-xl bg-primary/10 px-3.5 py-3 sm:col-span-2">
+            <div>
+              <dt className="text-xs text-muted-foreground">Valor líquido (pago)</dt>
+              <dd className="text-lg font-bold tabular-nums">{valores.valorLiquido != null && valores.valorLiquido > 0 ? formatBRL(valores.valorLiquido) : '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Unitário com desconto</dt>
+              <dd className="text-lg font-bold tabular-nums">
+                {valores.unitarioComDesconto ? `${formatPrecoLitro(valores.unitarioComDesconto)}/${unidade}` : '—'}
+              </dd>
+            </div>
+          </dl>
+
           <Checkbox
             name="tanque_cheio"
             defaultChecked
@@ -177,22 +325,8 @@ export function AbastecimentoForm({ veiculos, motoristas, veiculoInicial, combus
             className="sm:col-span-2"
           />
           <Field label="Posto" htmlFor="posto" error={fieldError('posto')} className="sm:col-span-2">
-            <Input id="posto" name="posto" maxLength={120} placeholder="Ex.: Posto Ipiranga BR-116" />
+            <Input id="posto" name="posto" maxLength={120} placeholder="Ex.: Posto Ipiranga BR-116" value={posto} onChange={(e) => setPosto(e.target.value)} />
           </Field>
-          <div className="sm:col-span-2">
-            <FileUpload
-              name="comprovante_path"
-              label="Foto do cupom / comprovante"
-              bucket="abastecimentos"
-              pasta={veiculo ? `${veiculo.filial_id}/${veiculo.id}` : null}
-              arquivo="cupom"
-              maxDimension={1800}
-              semPastaMsg="Selecione o veículo antes de enviar o comprovante."
-              accept="image/*"
-              capture
-              hint={veiculo ? 'Tire a foto do cupom fiscal.' : 'Selecione o veículo primeiro.'}
-            />
-          </div>
           <Field label="Observação" htmlFor="observacao" error={fieldError('observacao')} className="sm:col-span-2">
             <Textarea id="observacao" name="observacao" rows={2} maxLength={1000} />
           </Field>

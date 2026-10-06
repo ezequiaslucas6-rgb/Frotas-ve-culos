@@ -130,6 +130,23 @@ CRON_SECRET="$(grep -E '^CRON_SECRET=' .env | cut -d= -f2-)"
 [[ ${#CRON_SECRET} -ge 32 ]] || falha "CRON_SECRET no .env precisa ter pelo menos 32 caracteres (gere com: openssl rand -hex 32)."
 ok "Chaves preenchidas"
 
+# variáveis novas de versões mais recentes entram no .env de quem já tinha instalado
+if ! grep -qE '^GEMINI_API_KEY=' .env; then
+  cat >>.env <<'EOF'
+
+# Leitura automática do cupom de abastecimento (opcional). Chave gratuita em
+# https://aistudio.google.com/apikey — fica só no servidor. Sem ela, o lançamento é digitado à mão.
+GEMINI_API_KEY=
+GEMINI_MODELOS=gemini-flash-lite-latest,gemini-flash-latest
+EOF
+  ok "Acrescentado GEMINI_API_KEY ao .env (leitura automática do cupom)"
+fi
+if grep -qE '^GEMINI_API_KEY=.+' .env; then
+  ok "Leitura automática do cupom: ligada"
+else
+  aviso "Leitura automática do cupom desligada: coloque a chave do Gemini em GEMINI_API_KEY no $DIR/.env e rode de novo"
+fi
+
 # ----------------------------------------------------------------------------- memória p/ o build
 MEM_MB=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
 SWAP_MB=$(awk '/SwapTotal/ {print int($2/1024)}' /proc/meminfo)

@@ -173,8 +173,15 @@ type AbastecimentoRow = {
   data_abastecimento: string;
   km: number;
   litros: number;
+  /** valor líquido (valor_bruto − desconto): o que foi pago */
   valor_total: number;
+  /** preço por litro com desconto (gerado: valor_total ÷ litros) */
   preco_litro: number;
+  /** valor total do combustível no cupom, antes do desconto (lançamentos antigos: null) */
+  valor_bruto: number | null;
+  desconto: number;
+  /** o que a leitura automática da foto do cupom encontrou */
+  leitura_cupom: Json | null;
   combustivel: Combustivel;
   tanque_cheio: boolean;
   posto: string | null;

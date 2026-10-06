@@ -43,7 +43,7 @@ export default async function VeiculoPage({ params }: { params: Promise<{ id: st
       .limit(8),
     supabase
       .from('abastecimentos')
-      .select('id, data_abastecimento, km, litros, valor_total, preco_litro, combustivel, tanque_cheio, posto, comprovante_url, motoristas(nome)')
+      .select('id, data_abastecimento, km, litros, valor_total, preco_litro, desconto, combustivel, tanque_cheio, posto, comprovante_url, motoristas(nome)')
       .eq('veiculo_id', id)
       .order('km', { ascending: false })
       .limit(30),

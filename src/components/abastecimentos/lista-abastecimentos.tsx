@@ -18,8 +18,11 @@ export interface ItemAbastecimento {
   data_abastecimento: string;
   km: number;
   litros: number;
+  /** valor líquido (pago) */
   valor_total: number;
+  /** preço por litro com desconto */
   preco_litro: number;
+  desconto?: number | null;
   combustivel: Combustivel;
   tanque_cheio: boolean;
   posto: string | null;
@@ -81,6 +84,7 @@ export function ListaAbastecimentos({
                 {a.posto ? <span>· {a.posto}</span> : null}
                 {mostrarMotorista ? <span>· {a.motoristas?.nome ?? 'Sem motorista'}</span> : null}
                 {a.tanque_cheio ? null : <Badge variant="secondary">Parcial</Badge>}
+                {Number(a.desconto) > 0 ? <Badge variant="success">Desconto {formatBRL(Number(a.desconto))}</Badge> : null}
                 {anomalia ? (
                   <Badge variant={anomalia.tipo === 'queda' ? 'danger' : 'warning'} title={dicaAnomalia(anomalia)}>
                     <TriangleAlert /> Consumo {descreverAnomalia(anomalia)}

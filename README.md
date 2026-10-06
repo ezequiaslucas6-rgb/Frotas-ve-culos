@@ -21,9 +21,10 @@ roda na **sua VPS** em Docker, atrás do Nginx, num subdomínio com HTTPS.
    5. `20260105000000_checklist_tipos.sql` (checklists diário/semanal/mensal)
    6. `20260106000000_checklist_motorista.sql` (o motorista faz o checklist dos próprios veículos)
    7. `20260107000000_avaria_bloqueio.sql` (avaria crítica abre manutenção e deixa o veículo não liberado)
+   8. `20260108000000_cupom_abastecimento.sql` (valor total, desconto e leitura do cupom no abastecimento)
 
    **Já tinha o sistema instalado?** Rode apenas o que ainda não rodou (nessa ordem, separados) e depois atualize o
-   app na VPS. Quem já está com os itens 1–6 roda só o item 7.
+   app na VPS. Quem já está com os itens 1–7 roda só o item 8.
 2. Execute `supabase/seed.sql` (filiais de exemplo).
 3. **Primeiro Administrador Geral (obrigatório).** Crie o usuário em *Authentication → Users → Add user* (marque
    *Auto Confirm User*) e vincule-o como admin:
@@ -145,6 +146,37 @@ Lançados pelo motorista (ou pelo supervisor): data, KM do hodômetro, combustí
 posto e **foto do cupom**. O KM do veículo é atualizado automaticamente (nunca regride) e o app recusa KM menor que o
 último registrado no mesmo dia. O **consumo (km/l)** usa o método tanque cheio a tanque cheio (parciais somam ao ciclo
 seguinte). O painel passa a mostrar o **custo da frota = manutenção + combustível**.
+
+**Nota de abastecimento: desconto e preço por litro.** O cupom mostra o valor total e o desconto, mas não o preço
+por litro com desconto. O lançamento pede **litros, valor total e desconto** e calcula sozinho:
+
+| Valor | Conta |
+|---|---|
+| **Valor líquido** (o que foi pago; entra nos custos) | valor total − desconto |
+| **Unitário com desconto** (preço por litro gravado) | valor líquido ÷ litros |
+| Preço da bomba (só para conferir) | valor total ÷ litros |
+
+**Leitura automática do cupom (Gemini, opcional).** A foto do cupom vem primeiro no lançamento e passa pelo
+**modo digitalização** no próprio celular (recorta o papel, tira a sombra, reforça o contraste e escurece a
+impressão térmica apagada). Com a chave do Gemini no servidor, a foto é lida e os campos são preenchidos: litros,
+valor total, desconto, combustível, data e posto. A pessoa confere e registra.
+- A IA só **transcreve** os números impressos; as contas são feitas pelo sistema e **conferidas com o próprio
+  cupom** (litros × preço da bomba = valor total; valor total − desconto = valor a pagar). Se algo não bate, o
+  resumo mostra **Confira** e o motivo; se tudo bate, **Conferido**.
+- Nota com outros produtos (ARLA, óleo…): usa a linha do combustível; desconto só da nota inteira é dividido
+  proporcionalmente, com aviso.
+- O que foi lido fica gravado no lançamento (`leitura_cupom`) para conferência.
+- **Chave gratuita:** crie em [aistudio.google.com/apikey](https://aistudio.google.com/apikey), coloque em
+  `GEMINI_API_KEY` no `/opt/frotas/.env` da VPS e rode o instalador. A chave fica só no servidor.
+  `GEMINI_MODELOS` define a ordem dos modelos (padrão `gemini-flash-lite-latest,gemini-flash-latest`): se o limite
+  gratuito de um acabar, usa o próximo. Sem chave, sem cota ou sem internet, o lançamento é digitado à mão (as
+  contas continuam automáticas).
+- No plano gratuito, o Google pode usar as imagens enviadas para melhorar os produtos dele. Para que isso não
+  aconteça, ative o faturamento no projeto da chave (plano pago).
+- **Testar leitura de cupons** (Administrador Geral, em Abastecimentos): envie fotos de vários modelos de nota e
+  veja o que é lido em cada uma, sem lançar nada (as fotos são apagadas depois). *Copiar resultados* gera um
+  resumo para ajustar as instruções da leitura (`src/lib/abastecimento/prompt-cupom.ts`) a um modelo novo.
+- Limites: 6 leituras por minuto e 80 por dia por usuário (protege a cota gratuita).
 
 **Consumo fora do padrão.** Cada ciclo (tanque cheio a tanque cheio) é comparado com a média dos até 5 ciclos normais
 anteriores do mesmo veículo e combustível (precisa de pelo menos 2):

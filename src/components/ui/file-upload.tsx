@@ -4,6 +4,7 @@ import { useId, useRef, useState } from 'react';
 import { Camera, FileText, ImagePlus, Loader2, RefreshCw, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { compressImage, formatBytes } from '@/lib/image/compress';
+import { digitalizarCupom } from '@/lib/image/digitalizar';
 import type { BucketName } from '@/lib/storage';
 import { caminhoMiniatura } from '@/lib/storage-paths';
 import { createClient } from '@/lib/supabase/client';
@@ -31,6 +32,10 @@ interface FileUploadProps {
   initialUrl?: string | null;
   hint?: string;
   capture?: boolean;
+  /** modo digitalização (cupom): recorta o papel, tira sombra e reforça o contraste */
+  digitalizar?: boolean;
+  /** avisa quando um arquivo novo foi enviado (ou removido: null) */
+  onEnviado?: (path: string | null) => void;
 }
 
 type Phase = 'idle' | 'compressing' | 'uploading' | 'error';
@@ -59,6 +64,8 @@ export function FileUpload({
   initialUrl = null,
   hint,
   capture,
+  digitalizar = false,
+  onEnviado,
 }: FileUploadProps) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -88,7 +95,22 @@ export function FileUpload({
       let info = formatBytes(file.size);
       let mini: Blob | null = null;
 
-      if (!pdf) {
+      if (!pdf && digitalizar) {
+        setPhase('compressing');
+        let pronto: { blob: Blob; originalSize: number };
+        let rotulo = 'Digitalizado';
+        try {
+          pronto = await digitalizarCupom(file, { maxDimension });
+        } catch {
+          // aparelho sem canvas suficiente: segue com a foto comum
+          pronto = await compressImage(file, { maxDimension, quality: 0.85 });
+          rotulo = 'Foto';
+        }
+        body = pronto.blob;
+        contentType = 'image/jpeg';
+        ext = 'jpg';
+        info = `${rotulo} · ${formatBytes(pronto.originalSize)} → ${formatBytes(pronto.blob.size)}`;
+      } else if (!pdf) {
         setPhase('compressing');
         const compressed = await compressImage(file, { maxDimension, quality: 0.82 });
         body = compressed.blob;
@@ -111,6 +133,7 @@ export function FileUpload({
       if (uploadError) throw new Error('Falha no envio. Verifique a conexão e tente novamente.');
 
       setPath(destino);
+      onEnviado?.(destino);
       setIsPdf(pdf);
       setFileInfo(info);
       setPreviewUrl((old) => {
@@ -164,7 +187,9 @@ export function FileUpload({
 
         <div className="min-w-0 flex-1 text-sm">
           {busy ? (
-            <p className="text-muted-foreground">{phase === 'compressing' ? 'Comprimindo imagem…' : 'Enviando…'}</p>
+            <p className="text-muted-foreground">
+              {phase === 'compressing' ? (digitalizar ? 'Digitalizando o cupom…' : 'Comprimindo imagem…') : 'Enviando…'}
+            </p>
           ) : path ? (
             <>
               <p className="font-medium">{isPdf ? 'PDF anexado' : 'Imagem anexada'}</p>
@@ -193,6 +218,7 @@ export function FileUpload({
               aria-label={`Remover ${label}`}
               onClick={() => {
                 setPath(null);
+                onEnviado?.(null);
                 setPreviewUrl(null);
                 setIsPdf(false);
                 setFileInfo(null);
