@@ -3,6 +3,8 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- atualização do próprio APK pelo app (pergunta antes; o Android confirma a instalação) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!--
       Sem a permissão CAMERA de propósito: as fotos usam o app de câmera do próprio celular

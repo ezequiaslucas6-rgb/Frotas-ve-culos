@@ -58,6 +58,20 @@ Subdomínio: `*.sslip.io` aponta sozinho para o IP do nome, sem configurar DNS. 
 
 **Logs:** `sudo docker compose -f /opt/frotas/docker-compose.yml logs -f`.
 
+### Atualizações automáticas
+Depois da primeira instalação, ninguém precisa atualizar nada à mão:
+1. **VPS:** a cada 10 minutos (`deploy/auto-atualizar.sh`, no cron do root) ela confere o GitHub e, se há versão nova,
+   constrói e troca o container (o app anterior fica no ar até a nova estar pronta). Histórico em
+   `/opt/frotas/atualizacao.log`. **Versão com migration de banco nova não é publicada sozinha**: o aviso fica em
+   `/opt/frotas/ATUALIZACAO_PENDENTE.txt` com a lista do que rodar no SQL Editor; depois rode
+   `bash /opt/frotas/deploy/atualizar.sh`. Para desligar: `AUTO_ATUALIZAR=0 bash /opt/frotas/deploy/instalar-vps.sh`.
+2. **Celulares e navegadores:** o app confere a versão do servidor ao voltar para a tela, ao recuperar a internet e a
+   cada 10 minutos; se mudou, **recarrega sozinho**. Em tela de formulário (lançamento, checklist, cadastro) ele só
+   mostra *"Nova versão do Rodar"* e atualiza ao sair dela, sem perder o que foi digitado.
+3. **APK:** só muda quando a parte Android muda (raro). O próprio app confere a versão publicada no GitHub (a cada 6 h)
+   e oferece **Atualizar**: baixa, confere o arquivo e abre o instalador do Android, que instala por cima. Na primeira
+   vez o Android pede para permitir que o Rodar instale atualizações.
+
 | Variável (`.env`) | Uso |
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | navegador e servidor (sempre sob RLS). Embutidas no build: mudou? rode `docker compose up -d --build` |
@@ -70,7 +84,9 @@ Subdomínio: `*.sslip.io` aponta sozinho para o IP do nome, sem configurar DNS. 
 O app (`android/`) é o próprio sistema dentro de um WebView, ajustado ao celular: respeita a barra de status, o recorte
 da câmera, a barra de navegação e o teclado; tira as fotos (checklist, CNH, cupom) com a câmera do aparelho; abre
 WhatsApp, telefone e PDFs no app certo; o botão *voltar* volta as telas; mostra uma tela própria quando falta internet; e
-mantém o login entre aberturas. Como ele carrega o site da VPS, **toda atualização do sistema chega ao app sem reinstalar**.
+mantém o login entre aberturas. Como ele carrega o site da VPS, **toda atualização do sistema chega ao app sem reinstalar**
+(ele recarrega sozinho ao voltar para a tela) e o próprio APK se atualiza pelo app quando a parte Android muda (veja
+*Atualizações automáticas*).
 
 **Baixar:** a cada mudança em `android/`, o GitHub Actions (*App Android (APK)*) compila e publica em
 **Releases → App Android** o arquivo `frotas.apk`

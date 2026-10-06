@@ -38,6 +38,12 @@ if [[ -z ${FROTAS_COPIA:-} && -f $0 && $(realpath "$0") == "$(realpath -m "$DIR"
   FROTAS_COPIA=1 exec bash "$COPIA" "$@"
 fi
 
+# uma atualização por vez (a automática, deploy/auto-atualizar.sh, usa a mesma trava e avisa com FROTAS_TRAVA)
+if [[ -z ${FROTAS_TRAVA:-} ]]; then
+  exec 9>/tmp/frotas-atualizacao.lock
+  flock -n 9 || falha "Já há uma atualização em andamento (a automática). Aguarde alguns minutos e rode de novo."
+fi
+
 # ----------------------------------------------------------------------------- pré-requisitos
 msg "Verificando o sistema"
 if [[ $EUID -eq 0 ]]; then
@@ -165,7 +171,10 @@ msg "Subindo o app (127.0.0.1:$PORTA)"
 if $SUDO ss -ltnH "sport = :$PORTA" | grep -q . && ! $DOCKER ps --format '{{.Names}}' | grep -qx frotas; then
   falha "A porta $PORTA já está em uso por outro programa. Rode de novo com outra porta, ex.: PORTA=3011 bash $DIR/deploy/instalar-vps.sh (e ajuste FROTAS_PORTA no .env)."
 fi
-$DOCKER compose up -d --build
+# versão deste build: o app aberto nos celulares percebe a troca e recarrega sozinho
+VERSAO_APP="$(git -C "$DIR" rev-parse --short HEAD)-$(date +%Y%m%d%H%M%S)"
+$DOCKER compose build --build-arg VERSAO_APP="$VERSAO_APP"
+$DOCKER compose up -d
 for _ in $(seq 1 60); do
   curl -fsS -o /dev/null "http://127.0.0.1:$PORTA/login" && break
   sleep 2
@@ -332,6 +341,19 @@ if curl -fsS -m 60 -H "Authorization: Bearer $CRON_SECRET" "http://127.0.0.1:$PO
   ok "Teste do cron: ok (conexão com o Supabase funcionando)"
 else
   aviso "Teste do cron falhou: confira SUPABASE_SERVICE_ROLE_KEY e a URL no .env (depois: docker compose up -d --build)."
+fi
+
+# ----------------------------------------------------------------------------- atualização automática
+msg "Atualização automática"
+if [[ ${AUTO_ATUALIZAR:-1} == 1 ]]; then
+  # no cron do root: atualizar envolve docker e o servidor web
+  LINHA_AUTO="*/10 * * * * bash $DIR/deploy/auto-atualizar.sh >/dev/null 2>&1 # frotas-auto-atualizar"
+  ($SUDO crontab -l 2>/dev/null | grep -v 'frotas-auto-atualizar' || true; echo "$LINHA_AUTO") | $SUDO crontab -
+  ok "A VPS confere o GitHub a cada 10 min e se atualiza sozinha (histórico: $DIR/atualizacao.log)"
+  ok "Versão nova com migration de banco espera você rodar o SQL (aviso em $DIR/ATUALIZACAO_PENDENTE.txt)"
+else
+  ($SUDO crontab -l 2>/dev/null | grep -v 'frotas-auto-atualizar' || true) | $SUDO crontab -
+  aviso "Atualização automática desligada (AUTO_ATUALIZAR=0). Para religar, rode o instalador sem essa variável."
 fi
 
 # ----------------------------------------------------------------------------- fim

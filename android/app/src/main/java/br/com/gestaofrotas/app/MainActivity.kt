@@ -43,6 +43,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var web: WebView
     private lateinit var progresso: ProgressBar
     private lateinit var erro: View
+    private lateinit var atualizador: AtualizadorApk
+    /** quando o app foi para o segundo plano (0 = está na frente) */
+    private var pausadoEm = 0L
 
     private val urlInicial: Uri = Uri.parse(BuildConfig.APP_URL)
     private val hostDoSistema: String = urlInicial.host.orEmpty()
@@ -96,6 +99,26 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null || web.restoreState(savedInstanceState) == null) {
             web.loadUrl(urlInicial.toString())
         }
+
+        atualizador = AtualizadorApk(this)
+        atualizador.verificar()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        web.onResume()
+        // voltou do segundo plano: a página confere se o sistema tem versão nova e recarrega sozinha
+        if (pausadoEm > 0 && System.currentTimeMillis() - pausadoEm > VOLTA_MS) {
+            web.evaluateJavascript("window.dispatchEvent(new Event('rodar:retomar'))", null)
+        }
+        pausadoEm = 0
+        atualizador.aoRetomar()
+        atualizador.verificar()
+    }
+
+    override fun onDestroy() {
+        atualizador.encerrar()
+        super.onDestroy()
     }
 
     /** O conteúdo nunca fica atrás da barra de status, do recorte da câmera ou do teclado. */
@@ -291,6 +314,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
+        web.onPause()
+        pausadoEm = System.currentTimeMillis()
         CookieManager.getInstance().flush()
+    }
+
+    private companion object {
+        /** fora do app por mais que isso (ex.: abriu outro app) => confere a versão ao voltar */
+        const val VOLTA_MS = 60_000L
     }
 }

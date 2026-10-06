@@ -5,7 +5,8 @@
  *  - as fotos e o envio ficam na fila do aparelho (src/lib/offline/fila.ts) e sobem sozinhos.
  * Nada além disso é guardado (os dados das outras telas sempre vêm do servidor).
  */
-const VERSAO = 'v1';
+// versão do app (registrada como /sw.js?v=<versão>): cada publicação tem os próprios caches
+const VERSAO = new URL(self.location.href).searchParams.get('v') || 'v1';
 const PAGINAS = `rodar-paginas-${VERSAO}`;
 const ESTATICOS = `rodar-estaticos-${VERSAO}`;
 const OFFLINE = '/offline.html';
@@ -29,7 +30,7 @@ self.addEventListener('activate', (evento) => {
   );
 });
 
-const ehEstatico = (url) => url.pathname.startsWith('/_next/static/') || url.pathname.startsWith('/icons/') || url.pathname.startsWith('/marca/');
+const ehEstatico = (url) => url.pathname.startsWith('/_next/static/');
 const funcionaOffline = (url) => PAGINAS_OFFLINE.includes(url.pathname);
 
 /** Guarda a página (só se for a tela de verdade, não o login) e os JS/CSS que ela usa. */
@@ -57,6 +58,27 @@ self.addEventListener('fetch', (evento) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
+
+  // ícones e imagens da marca não têm hash no nome: usa o guardado e atualiza por trás
+  if (url.pathname.startsWith('/icons/') || url.pathname.startsWith('/marca/')) {
+    evento.respondWith(
+      caches.open(ESTATICOS).then(async (cache) => {
+        const guardado = await cache.match(req);
+        const daRede = fetch(req)
+          .then((r) => {
+            if (r.ok) cache.put(req, r.clone());
+            return r;
+          })
+          .catch(() => guardado || Response.error());
+        if (guardado) {
+          evento.waitUntil(daRede.then(() => undefined));
+          return guardado;
+        }
+        return daRede;
+      }),
+    );
+    return;
+  }
 
   // JS/CSS com hash no nome nunca mudam: do cache, se houver
   if (ehEstatico(url)) {

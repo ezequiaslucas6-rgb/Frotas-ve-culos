@@ -15,6 +15,7 @@ import {
   todasAsFotos,
   type EnvioPendente,
 } from '@/lib/offline/fila';
+import { VERSAO_APP } from '@/components/atualizacao-automatica';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 
@@ -94,9 +95,9 @@ export function SincronizacaoOffline({ userId, oculto = false }: { userId: strin
   }, [pendentes, sincronizar]);
 
   // guarda a tela do checklist no aparelho (service worker) para abrir sem internet
-  // (uma vez por sessão e por usuário: quem entra depois de outro na mesma aba guarda a sua)
+  // (uma vez por sessão, usuário e versão: quem entra depois de outro na mesma aba guarda a sua)
   useEffect(() => {
-    const chave = `rodar:pre-carregado:${userId}`;
+    const chave = `rodar:pre-carregado:${VERSAO_APP}:${userId}`; // a cada versão nova, guarda a tela nova
     try {
       if (sessionStorage.getItem(chave) || !navigator.onLine) return;
       navigator.serviceWorker?.ready

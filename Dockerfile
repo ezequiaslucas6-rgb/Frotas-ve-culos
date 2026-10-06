@@ -13,8 +13,11 @@ COPY . .
 # As variáveis NEXT_PUBLIC_* são embutidas no JavaScript do navegador durante o build.
 ARG NEXT_PUBLIC_SUPABASE_URL
 ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+# versão do build (o instalador passa commit + horário): o app aberto percebe a troca e recarrega
+ARG VERSAO_APP=""
 ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
     NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY \
+    VERSAO_APP=$VERSAO_APP \
     NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 

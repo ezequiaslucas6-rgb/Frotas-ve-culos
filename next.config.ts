@@ -1,9 +1,25 @@
+import { execSync } from 'node:child_process';
 import type { NextConfig } from 'next';
+
+/**
+ * Versão deste build. Muda a cada publicação: o app aberto (APK, atalho ou navegador) compara
+ * com /api/versao e recarrega sozinho quando o servidor já está numa versão nova.
+ * Na VPS vem do instalador (commit + horário); fora dela, o commit atual.
+ */
+function versaoDoBuild(): string {
+  if (process.env.VERSAO_APP?.trim()) return process.env.VERSAO_APP.trim();
+  try {
+    return execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || 'dev';
+  } catch {
+    return 'dev';
+  }
+}
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   // build autocontido (node server.js) para rodar em Docker na VPS
   output: 'standalone',
+  env: { NEXT_PUBLIC_VERSAO_APP: versaoDoBuild() },
   experimental: {
     // Checklists enviam apenas metadados (as fotos vão direto ao Storage),
     // então o limite padrão de 1MB das Server Actions é suficiente.

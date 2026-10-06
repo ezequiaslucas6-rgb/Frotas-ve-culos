@@ -6,4 +6,11 @@
     <string name="erro_botao">Tentar novamente</string>
     <string name="escolher_arquivo">Enviar foto ou arquivo</string>
     <string name="sem_app">Nenhum aplicativo para abrir este link.</string>
+    <string name="atualizacao_titulo">Atualização do Rodar</string>
+    <string name="atualizacao_texto">Há uma versão nova do app (%1$s). Atualizar agora? Leva menos de um minuto e seus dados continuam no celular.</string>
+    <string name="atualizacao_atualizar">Atualizar</string>
+    <string name="atualizacao_depois">Depois</string>
+    <string name="atualizacao_baixando">Baixando a atualização do Rodar…</string>
+    <string name="atualizacao_falhou">Não foi possível atualizar agora. Tente mais tarde.</string>
+    <string name="atualizacao_permissao">Permita que o Rodar instale a atualização e volte ao app.</string>
 </resources>

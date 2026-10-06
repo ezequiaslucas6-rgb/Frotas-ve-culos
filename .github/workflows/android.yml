@@ -70,7 +70,10 @@ jobs:
           VERSION_CODE: ${{ github.run_number }}
           VERSION_NAME: 1.0.${{ github.run_number }}
         run: |
-          ./gradlew assembleRelease -PappUrl="$APP_URL" --no-daemon --stacktrace
+          # o app confere este versao.json (publicado abaixo) e se atualiza sozinho
+          ./gradlew assembleRelease -PappUrl="$APP_URL" \
+            -PatualizacaoUrl="https://github.com/${{ github.repository }}/releases/download/app-android/versao.json" \
+            --no-daemon --stacktrace
           cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/frotas.apk"
           ls -la "$RUNNER_TEMP/frotas.apk"
 
@@ -96,8 +99,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           APP_URL: ${{ inputs.app_url || 'https://frotas.209.50.240.59.sslip.io/' }}
         run: |
+          # versao.json: o app instalado compara com a versão dele e oferece a atualização
+          SHA256="$(sha256sum "$RUNNER_TEMP/frotas.apk" | cut -d' ' -f1)"
+          printf '{"versionCode":%s,"versionName":"1.0.%s","url":"https://github.com/%s/releases/download/app-android/frotas.apk","sha256":"%s"}\n' \
+            "${{ github.run_number }}" "${{ github.run_number }}" "${{ github.repository }}" "$SHA256" > "$RUNNER_TEMP/versao.json"
+          cat "$RUNNER_TEMP/versao.json"
           gh release delete app-android --yes --cleanup-tag || true
-          gh release create app-android "$RUNNER_TEMP/frotas.apk" \
+          gh release create app-android "$RUNNER_TEMP/frotas.apk" "$RUNNER_TEMP/versao.json" \
             --target "$GITHUB_SHA" \
             --title "Rodar (Android) — versão 1.0.${{ github.run_number }}" \
             --notes "Instale no celular: baixe o frotas.apk, toque nele e permita instalar de fontes desconhecidas. O app abre o sistema em $APP_URL."

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Toaster } from 'sonner';
+import { AtualizacaoAutomatica } from '@/components/atualizacao-automatica';
 import { ThemeProvider } from '@/components/theme-provider';
 import './globals.css';
 
@@ -28,6 +29,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <ThemeProvider>
           {children}
+          {/* versão nova no servidor: o app aberto (APK, atalho, navegador) recarrega sozinho */}
+          <AtualizacaoAutomatica />
           <Toaster theme="system" position="top-center" closeButton toastOptions={{ className: '!rounded-xl' }} />
         </ThemeProvider>
       </body>

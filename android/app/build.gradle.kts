@@ -9,6 +9,10 @@ plugins {
 val appUrl = (findProperty("appUrl") as String?)?.takeIf { it.isNotBlank() }
     ?: "https://frotas.209.50.240.59.sslip.io/"
 
+// Onde o app confere se há APK novo (o workflow publica versao.json junto com o APK).
+// Vazio = sem atualização automática do APK (ex.: build local).
+val atualizacaoUrl = (findProperty("atualizacaoUrl") as String?)?.trim().orEmpty()
+
 // Assinatura: com a chave dos secrets do GitHub o APK pode ser ATUALIZADO por cima da
 // versão anterior; sem ela, sai assinado com a chave de depuração (instala normalmente,
 // mas para atualizar é preciso desinstalar antes).
@@ -25,6 +29,7 @@ android {
         versionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()
         versionName = System.getenv("VERSION_NAME") ?: "1.0"
         buildConfigField("String", "APP_URL", "\"$appUrl\"")
+        buildConfigField("String", "ATUALIZACAO_URL", "\"$atualizacaoUrl\"")
     }
 
     signingConfigs {
