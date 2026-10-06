@@ -23,7 +23,9 @@ concurrency:
 
 jobs:
   apk:
-    runs-on: ubuntu-latest
+    # versão fixa: o "ubuntu-latest" muda para o Ubuntu 26 em 19/10/2026 e o build usa o
+    # Android SDK e o Java que já vêm na máquina do GitHub
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: android

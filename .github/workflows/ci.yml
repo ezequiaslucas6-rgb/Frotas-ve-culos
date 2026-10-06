@@ -8,7 +8,7 @@ on:
 jobs:
   app:
     name: Lint, tipos, testes e build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,7 +26,7 @@ jobs:
 
   banco:
     name: Migrations + RLS (Postgres embutido)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: supabase/tests
