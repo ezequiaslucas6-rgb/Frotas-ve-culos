@@ -7,6 +7,7 @@ import { FotoComMarcadores, parseMarcadores } from '@/components/checklist/foto-
 import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { DeleteButton } from '@/components/ui/delete-button';
+import { FotoAmpliavel, GaleriaFotos, type FotoGaleria } from '@/components/ui/galeria-fotos';
 import { PageHeader } from '@/components/ui/page-header';
 import { ChecklistStatusBadge, ChecklistTipoBadge } from '@/components/ui/status-badges';
 import { AvisoBloqueio } from '@/components/veiculos/aviso-bloqueio';
@@ -64,6 +65,25 @@ export default async function ChecklistPage({ params }: { params: Promise<{ id: 
       .map(([codigo]) => ({ ...itemDe(codigo), foto: null, resposta: false as const })),
   ];
   const grupos = agruparItens(entradas);
+
+  // todas as fotos do checklist, na ordem da tela: tocar numa abre ampliada e navega entre elas
+  const galeria: FotoGaleria[] = [];
+  const indiceDaFoto = new Map<string, number>();
+  for (const g of grupos) {
+    for (const item of g.itens) {
+      const url = item.foto ? urls[item.foto.foto_url] : undefined;
+      if (!item.foto || !url) continue;
+      indiceDaFoto.set(item.codigo, galeria.length);
+      galeria.push({
+        src: url,
+        titulo: item.nome,
+        subtitulo: g.grupo,
+        observacao: item.foto.observacao,
+        marcadores: parseMarcadores(item.foto.marcadores),
+        selo: <ChecklistStatusBadge status={item.foto.severidade} />,
+      });
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -145,57 +165,61 @@ export default async function ChecklistPage({ params }: { params: Promise<{ id: 
         </CardContent>
       </Card>
 
-      {grupos.map((g) => (
-        <section key={g.grupo} className="flex flex-col gap-3" aria-labelledby={`grupo-${g.grupo}`}>
-          <h2 id={`grupo-${g.grupo}`} className="flex items-center gap-2 text-lg font-semibold">
-            {g.grupo}
-            <span className="text-sm font-normal text-muted-foreground">
-              {g.itens.filter((i) => i.foto).length} foto(s)
-            </span>
-          </h2>
-          <ul className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {g.itens.map((item) => {
-              const foto = item.foto;
-              const url = foto ? urls[foto.foto_url] : undefined;
-              return (
-                <li key={item.codigo}>
-                  <Card className="h-full gap-3 py-4">
-                    <CardContent className="flex flex-col gap-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="font-semibold">{item.nome}</p>
-                        {foto ? <ChecklistStatusBadge status={foto.severidade} /> : null}
-                      </div>
-                      {item.pergunta && typeof item.resposta === 'boolean' ? (
-                        <p className="text-sm">
-                          <span className="text-muted-foreground">{item.pergunta}</span>{' '}
-                          <span className={item.resposta ? 'font-semibold text-destructive-text' : 'font-semibold text-success-text'}>
-                            {item.resposta ? 'Sim' : 'Não'}
-                          </span>
-                        </p>
-                      ) : null}
-                      {foto && url ? (
-                        <>
-                          <FotoComMarcadores src={url} alt={item.nome} marcadores={parseMarcadores(foto.marcadores)} />
-                          <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex w-fit items-center gap-1 text-xs text-muted-foreground hover:underline">
-                            Abrir original <ExternalLink className="size-3" />
-                          </a>
-                        </>
-                      ) : foto ? (
-                        <p className="text-sm text-muted-foreground">Foto indisponível.</p>
-                      ) : (
-                        <p className="flex items-center gap-1.5 text-sm text-success-text">
-                          <CircleCheck className="size-4" /> Sem vazamento ou avaria.
-                        </p>
-                      )}
-                      {foto?.observacao ? <p className="rounded-lg bg-muted px-3 py-2 text-sm">{foto.observacao}</p> : null}
-                    </CardContent>
-                  </Card>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ))}
+      <GaleriaFotos fotos={galeria}>
+        {grupos.map((g) => (
+          <section key={g.grupo} className="flex flex-col gap-3" aria-labelledby={`grupo-${g.grupo}`}>
+            <h2 id={`grupo-${g.grupo}`} className="flex items-center gap-2 text-lg font-semibold">
+              {g.grupo}
+              <span className="text-sm font-normal text-muted-foreground">
+                {g.itens.filter((i) => i.foto).length} foto(s)
+              </span>
+            </h2>
+            <ul className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {g.itens.map((item) => {
+                const foto = item.foto;
+                const url = foto ? urls[foto.foto_url] : undefined;
+                return (
+                  <li key={item.codigo}>
+                    <Card className="h-full gap-3 py-4">
+                      <CardContent className="flex flex-col gap-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="font-semibold">{item.nome}</p>
+                          {foto ? <ChecklistStatusBadge status={foto.severidade} /> : null}
+                        </div>
+                        {item.pergunta && typeof item.resposta === 'boolean' ? (
+                          <p className="text-sm">
+                            <span className="text-muted-foreground">{item.pergunta}</span>{' '}
+                            <span className={item.resposta ? 'font-semibold text-destructive-text' : 'font-semibold text-success-text'}>
+                              {item.resposta ? 'Sim' : 'Não'}
+                            </span>
+                          </p>
+                        ) : null}
+                        {foto && url ? (
+                          <>
+                            <FotoAmpliavel indice={indiceDaFoto.get(item.codigo) ?? 0} titulo={item.nome}>
+                              <FotoComMarcadores src={url} alt={item.nome} marcadores={parseMarcadores(foto.marcadores)} />
+                            </FotoAmpliavel>
+                            <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex w-fit items-center gap-1 text-xs text-muted-foreground hover:underline">
+                              Abrir original <ExternalLink className="size-3" />
+                            </a>
+                          </>
+                        ) : foto ? (
+                          <p className="text-sm text-muted-foreground">Foto indisponível.</p>
+                        ) : (
+                          <p className="flex items-center gap-1.5 text-sm text-success-text">
+                            <CircleCheck className="size-4" /> Sem vazamento ou avaria.
+                          </p>
+                        )}
+                        {foto?.observacao ? <p className="rounded-lg bg-muted px-3 py-2 text-sm">{foto.observacao}</p> : null}
+                      </CardContent>
+                    </Card>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ))}
+      </GaleriaFotos>
     </div>
   );
 }

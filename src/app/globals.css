@@ -120,6 +120,14 @@
       font-size: inherit;
     }
   }
+  /* calendário dos campos de data no mesmo tom da setinha dos selects */
+  input[type='date']::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 0.55;
+  }
+  input[type='date']::-webkit-calendar-picker-indicator:hover {
+    opacity: 0.9;
+  }
 }
 
 @utility pb-safe {

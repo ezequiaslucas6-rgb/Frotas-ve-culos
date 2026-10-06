@@ -9,10 +9,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { DeleteButton } from '@/components/ui/delete-button';
-import { Input, Select } from '@/components/ui/input';
+import { Select } from '@/components/ui/input';
 import { EmptyState, PageHeader } from '@/components/ui/page-header';
 import { AlertaBadge } from '@/components/ui/status-badges';
 import { requireSession } from '@/lib/auth';
+import { mesesEntre, rotuloMes, toISODate } from '@/lib/dates';
 import { formatBRL, formatDateISO, formatFilial, formatKm } from '@/lib/format';
 import { pageRange, parsePage, resolveFilialFilter, type SearchParams } from '@/lib/pagination';
 import { formatPlaca } from '@/lib/validators/documentos';
@@ -50,7 +51,7 @@ export default async function ManutencoesPage({ searchParams }: { searchParams: 
     return q;
   };
 
-  const [{ data: manutencoes, count }, { data: totais }, { data: filiais }] = await Promise.all([
+  const [{ data: manutencoes, count }, { data: totais }, { data: filiais }, { data: maisAntiga }] = await Promise.all([
     aplicar(
       supabase
         .from('manutencoes')
@@ -61,7 +62,16 @@ export default async function ManutencoesPage({ searchParams }: { searchParams: 
     ),
     aplicar(supabase.from('manutencoes').select('custo, tipo')),
     isAdmin ? supabase.from('filiais').select('id, nome_cidade, uf').order('nome_cidade') : Promise.resolve({ data: null }),
+    // o filtro de mês vai do mês atual até o da manutenção mais antiga
+    supabase.from('manutencoes').select('data_manutencao').order('data_manutencao').limit(1).maybeSingle(),
   ]);
+
+  const mesAtual = toISODate().slice(0, 7);
+  const umAnoAtras = mesesEntre('0000-01', mesAtual, 12).at(-1) ?? mesAtual;
+  const primeiroMes = [umAnoAtras, maisAntiga?.data_manutencao?.slice(0, 7), periodo ? mes : undefined]
+    .filter((m): m is string => Boolean(m))
+    .sort()[0]!;
+  const meses = mesesEntre(primeiroMes, periodo && mes! > mesAtual ? mes! : mesAtual);
 
   const custoTotal = (totais ?? []).reduce((acc, m) => acc + Number(m.custo), 0);
   const custoPreventiva = (totais ?? []).filter((m) => m.tipo === 'preventiva').reduce((acc, m) => acc + Number(m.custo), 0);
@@ -90,7 +100,14 @@ export default async function ManutencoesPage({ searchParams }: { searchParams: 
           <option value="">Todas as situações</option>
           <option value="aberta">Abertas (conserto pendente)</option>
         </Select>
-        <Input type="month" name="mes" defaultValue={mes ?? ''} aria-label="Mês" className="sm:w-44" />
+        <Select name="mes" defaultValue={periodo ? mes : ''} aria-label="Mês" className="sm:w-48">
+          <option value="">Todos os meses</option>
+          {meses.map((m) => (
+            <option key={m} value={m}>
+              {rotuloMes(m)}
+            </option>
+          ))}
+        </Select>
         <Button type="submit" variant="secondary">
           Filtrar
         </Button>
