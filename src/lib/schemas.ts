@@ -59,54 +59,71 @@ export const supervisorSchema = z.object({
   filial_id: uuid,
 });
 
-export const motoristaSchema = z.object({
-  id: uuid.optional(),
-  filial_id: uuid.optional(),
-  nome: z.string().trim().min(2, 'Informe o nome completo.').max(120),
-  cpf: z
-    .string('Informe o CPF.')
-    .refine(isValidCpf, 'CPF inválido.')
-    .transform(onlyDigits),
-  email: z.string('Informe o e-mail.').trim().toLowerCase().pipe(z.email('E-mail inválido.')),
-  whatsapp: z
-    .string('Informe o WhatsApp.')
-    .transform((v, ctx) => {
-      const normalized = normalizeWhatsapp(v);
-      if (!normalized) ctx.issues.push({ code: 'custom', message: 'WhatsApp inválido. Use DDD + número.', input: v });
-      return normalized ?? '';
-    }),
-  cnh: z.string('Informe a CNH.').refine(isValidCnh, 'CNH inválida.').transform(onlyDigits),
-  status: z.enum(['ativo', 'inativo', 'afastado', 'ferias']).default('ativo'),
-  // CNH
-  cnh_categoria: z.enum(CNH_CATEGORIAS, 'Selecione a categoria.'),
-  cnh_validade: z.string('Informe a validade.').regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida.'),
-  cnh_primeira_habilitacao: optionalDate,
-  cnh_emissao: optionalDate,
-  cnh_uf: z.preprocess(
-    (v) => (typeof v === 'string' ? v.trim().toUpperCase() || undefined : v),
-    z.string().regex(/^[A-Z]{2}$/, 'UF inválida.').optional(),
-  ),
-  cnh_ear: checkbox,
-  cnh_observacoes: optionalText,
-  cnh_frente_path: optionalText,
-  cnh_verso_path: optionalText,
-})
-  .superRefine((m, ctx) => {
-    const hoje = toISODate();
-    if (m.cnh_emissao && m.cnh_validade && m.cnh_validade <= m.cnh_emissao) {
-      ctx.addIssue({ code: 'custom', path: ['cnh_validade'], message: 'A validade deve ser posterior à emissão.' });
-    }
-    if (m.cnh_emissao && m.cnh_emissao > hoje) {
-      ctx.addIssue({ code: 'custom', path: ['cnh_emissao'], message: 'A emissão não pode ser no futuro.' });
-    }
-    if (m.cnh_primeira_habilitacao && m.cnh_primeira_habilitacao > (m.cnh_emissao ?? hoje)) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['cnh_primeira_habilitacao'],
-        message: 'A 1ª habilitação não pode ser posterior à emissão.',
-      });
-    }
-  });
+/** Opcional (fase de testes): vazio vira undefined; preenchido, só confere o formato (11 dígitos). */
+const onzeDigitosOpcional = (rotulo: string) =>
+  z.preprocess(
+    (v) => (typeof v === 'string' ? onlyDigits(v) || undefined : v),
+    z.string().regex(/^\d{11}$/, `${rotulo}: use 11 dígitos.`).optional(),
+  );
+
+const whatsapp = z.string('Informe o WhatsApp.').transform((v, ctx) => {
+  const normalized = normalizeWhatsapp(v);
+  if (!normalized) ctx.issues.push({ code: 'custom', message: 'WhatsApp inválido. Use DDD + número.', input: v });
+  return normalized ?? '';
+});
+
+/**
+ * Cadastro do motorista. `obrigatorios` (sistema completo): CPF, WhatsApp, CNH, categoria e
+ * validade, com os dígitos verificadores do CPF e da CNH. Sem eles (fase de testes, ver
+ * lib/motoristas/obrigatorios): esses campos são opcionais e aceitam números fictícios.
+ */
+export const motoristaSchemaPara = (obrigatorios: boolean) =>
+  z
+    .object({
+      id: uuid.optional(),
+      filial_id: uuid.optional(),
+      nome: z.string().trim().min(2, 'Informe o nome completo.').max(120),
+      cpf: obrigatorios
+        ? z.string('Informe o CPF.').refine(isValidCpf, 'CPF inválido.').transform(onlyDigits)
+        : onzeDigitosOpcional('CPF'),
+      email: z.string('Informe o e-mail.').trim().toLowerCase().pipe(z.email('E-mail inválido.')),
+      whatsapp: obrigatorios ? whatsapp : z.preprocess(emptyToUndefined, whatsapp.optional()),
+      cnh: obrigatorios ? z.string('Informe a CNH.').refine(isValidCnh, 'CNH inválida.').transform(onlyDigits) : onzeDigitosOpcional('CNH'),
+      status: z.enum(['ativo', 'inativo', 'afastado', 'ferias']).default('ativo'),
+      // CNH
+      cnh_categoria: obrigatorios
+        ? z.enum(CNH_CATEGORIAS, 'Selecione a categoria.')
+        : z.preprocess(emptyToUndefined, z.enum(CNH_CATEGORIAS, 'Selecione a categoria.').optional()),
+      cnh_validade: obrigatorios ? z.string('Informe a validade.').regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida.') : optionalDate,
+      cnh_primeira_habilitacao: optionalDate,
+      cnh_emissao: optionalDate,
+      cnh_uf: z.preprocess(
+        (v) => (typeof v === 'string' ? v.trim().toUpperCase() || undefined : v),
+        z.string().regex(/^[A-Z]{2}$/, 'UF inválida.').optional(),
+      ),
+      cnh_ear: checkbox,
+      cnh_observacoes: optionalText,
+      cnh_frente_path: optionalText,
+      cnh_verso_path: optionalText,
+    })
+    .superRefine((m, ctx) => {
+      const hoje = toISODate();
+      if (m.cnh_emissao && m.cnh_validade && m.cnh_validade <= m.cnh_emissao) {
+        ctx.addIssue({ code: 'custom', path: ['cnh_validade'], message: 'A validade deve ser posterior à emissão.' });
+      }
+      if (m.cnh_emissao && m.cnh_emissao > hoje) {
+        ctx.addIssue({ code: 'custom', path: ['cnh_emissao'], message: 'A emissão não pode ser no futuro.' });
+      }
+      if (m.cnh_primeira_habilitacao && m.cnh_primeira_habilitacao > (m.cnh_emissao ?? hoje)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['cnh_primeira_habilitacao'],
+          message: 'A 1ª habilitação não pode ser posterior à emissão.',
+        });
+      }
+    });
+
+export const motoristaSchema = motoristaSchemaPara(true);
 
 /** Login do motorista no app: o e-mail é o do cadastro; a senha provisória é definida aqui. */
 export const acessoMotoristaSchema = z.object({ motorista_id: uuid, senha });

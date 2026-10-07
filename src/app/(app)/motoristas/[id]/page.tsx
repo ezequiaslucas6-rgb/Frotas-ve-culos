@@ -47,17 +47,19 @@ export default async function MotoristaPage({ params }: { params: Promise<{ id: 
     <div className="flex flex-col gap-6">
       <PageHeader
         title={m.nome}
-        description={`CPF ${formatCpf(m.cpf)}${m.filiais ? ` · ${formatFilial(m.filiais)}` : ''}`}
+        description={[m.cpf ? `CPF ${formatCpf(m.cpf)}` : null, m.filiais ? formatFilial(m.filiais) : null].filter(Boolean).join(' · ')}
         actions={
           <>
-            <a
-              href={whatsappLink(m.whatsapp, `Olá ${m.nome.split(' ')[0]}, tudo bem?`)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={buttonVariants({ variant: 'success' })}
-            >
-              <MessageCircle /> {formatWhatsapp(m.whatsapp)}
-            </a>
+            {m.whatsapp ? (
+              <a
+                href={whatsappLink(m.whatsapp, `Olá ${m.nome.split(' ')[0]}, tudo bem?`)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={buttonVariants({ variant: 'success' })}
+              >
+                <MessageCircle /> {formatWhatsapp(m.whatsapp)}
+              </a>
+            ) : null}
             <Link href={`/motoristas/${m.id}/editar`} className={buttonVariants({ variant: 'outline' })}>
               <Pencil /> Editar
             </Link>

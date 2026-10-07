@@ -28,10 +28,10 @@ type MotoristaRow = {
   id: string;
   filial_id: string;
   nome: string;
-  cpf: string;
+  cpf: string | null;
   email: string;
-  whatsapp: string;
-  cnh: string;
+  whatsapp: string | null;
+  cnh: string | null;
   status: MotoristaStatus;
   created_at: string;
   user_id: string | null;
@@ -236,7 +236,7 @@ export type Database = {
       };
       motoristas: {
         Row: MotoristaRow;
-        Insert: Ins<MotoristaRow, 'filial_id' | 'nome' | 'cpf' | 'email' | 'whatsapp' | 'cnh'>;
+        Insert: Ins<MotoristaRow, 'filial_id' | 'nome' | 'email'>;
         Update: Partial<MotoristaRow>;
         Relationships: [
           {

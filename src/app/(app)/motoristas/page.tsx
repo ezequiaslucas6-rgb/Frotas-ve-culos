@@ -82,9 +82,13 @@ export default async function MotoristasPage({ searchParams }: { searchParams: P
                     {m.nome} <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
                   </p>
                   <p className="truncate text-xs text-muted-foreground">
-                    CPF {formatCpf(m.cpf)}
-                    {m.cnh_categoria ? ` · CNH ${m.cnh_categoria}` : ''}
-                    {isAdmin && m.filiais ? ` · ${formatFilial(m.filiais)}` : ''}
+                    {[
+                      m.cpf ? `CPF ${formatCpf(m.cpf)}` : 'CPF não informado',
+                      m.cnh_categoria ? `CNH ${m.cnh_categoria}` : null,
+                      isAdmin && m.filiais ? formatFilial(m.filiais) : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
                   </p>
                 </Link>
                 <MotoristaStatusBadge status={m.status} />
@@ -99,15 +103,17 @@ export default async function MotoristasPage({ searchParams }: { searchParams: P
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 {/* Contato rápido: abre a conversa no WhatsApp (app nativo no celular, Web no desktop) */}
-                <a
-                  href={whatsappLink(m.whatsapp, `Olá ${m.nome.split(' ')[0]}, tudo bem?`)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={`Chamar ${m.nome} no WhatsApp`}
-                  className={buttonVariants({ variant: 'success', size: 'sm' })}
-                >
-                  <MessageCircle /> {formatWhatsapp(m.whatsapp)}
-                </a>
+                {m.whatsapp ? (
+                  <a
+                    href={whatsappLink(m.whatsapp, `Olá ${m.nome.split(' ')[0]}, tudo bem?`)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`Chamar ${m.nome} no WhatsApp`}
+                    className={buttonVariants({ variant: 'success', size: 'sm' })}
+                  >
+                    <MessageCircle /> {formatWhatsapp(m.whatsapp)}
+                  </a>
+                ) : null}
                 <span className="flex-1" />
                 <Link href={`/motoristas/${m.id}/editar`} className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
                   <Pencil /> Editar

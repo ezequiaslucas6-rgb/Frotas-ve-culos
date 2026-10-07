@@ -24,9 +24,11 @@ roda na **sua VPS** em Docker, atrás do Nginx, num subdomínio com HTTPS.
    8. `20260108000000_cupom_abastecimento.sql` (valor total, desconto e leitura do cupom no abastecimento)
    9. `20260109000000_rotina_checklist.sql` (horário de Pimenta Bueno, decisão diária do supervisor, semanal
       obrigatório, foto da carcaça dos retrovisores)
+   10. `20260110000000_motorista_dados_opcionais.sql` (CPF, WhatsApp e CNH do motorista opcionais no banco, para a
+      fase de testes)
 
    **Já tinha o sistema instalado?** Rode apenas o que ainda não rodou (nessa ordem, separados) e depois atualize o
-   app na VPS. Quem já está com os itens 1–8 roda só o item 9.
+   app na VPS. Quem já está com os itens 1–9 roda só o item 10.
 2. Execute `supabase/seed.sql` (filiais de exemplo).
 3. **Primeiro Administrador Geral (obrigatório).** Crie o usuário em *Authentication → Users → Add user* (marque
    *Auto Confirm User*) e vincule-o como admin:
@@ -155,6 +157,13 @@ daltonismo nos dois temas e sempre aparecem com ícone + texto.
 | Checklists | CRUD global | lê e cria da própria filial (imutáveis) | faz nos próprios veículos, em seu nome; lê só os seus |
 | Abastecimentos | todos; corrige e exclui | lê e lança da própria filial | lança nos próprios veículos; lê só os seus |
 | Exclusões | sim | não (para desligar um motorista: status *Inativo*) | não |
+
+**Cadastro de motorista na fase de testes.** Por enquanto só **nome e e-mail** são obrigatórios: CPF, WhatsApp e os
+dados da CNH podem ficar em branco ou receber números fictícios (só o formato é conferido: 11 dígitos; WhatsApp com
+DDD). O e-mail não precisa existir (ex.: `motorista1@teste.com`): ele é só o login do app. Para voltar a exigir os dados
+reais (com os dígitos verificadores do CPF e da CNH), coloque `MOTORISTA_DADOS_OBRIGATORIOS=1` no `/opt/frotas/.env` e
+rode `bash /opt/frotas/deploy/atualizar.sh`; os motoristas já cadastrados sem esses dados terão de ser completados na
+próxima edição.
 
 O isolamento é garantido no banco: RLS em todas as tabelas, FKs compostas `(veiculo_id, filial_id)` e
 `(motorista_id, filial_id)` que impedem referências entre filiais, `profiles` gravável só pelo Admin (nome e foto mudam

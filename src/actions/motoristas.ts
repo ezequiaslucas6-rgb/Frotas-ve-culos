@@ -5,7 +5,8 @@ import { revalidatePath } from 'next/cache';
 import { fail, ok, type ActionState } from '@/lib/action-state';
 import { esquecerPerfil, requireAdmin, requireSession, resolveFilialId } from '@/lib/auth';
 import { friendlyDbError } from '@/lib/db-errors';
-import { acessoMotoristaSchema, flattenErrors, formDataToObject, motoristaSchema } from '@/lib/schemas';
+import { dadosPessoaisObrigatorios } from '@/lib/motoristas/obrigatorios';
+import { acessoMotoristaSchema, flattenErrors, formDataToObject, motoristaSchemaPara } from '@/lib/schemas';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 /** Imagens da CNH vivem em <filial_id>/... no bucket "motoristas". */
@@ -13,12 +14,18 @@ const pathBelongsTo = (path: string | undefined, filialId: string) => !path || p
 
 export async function salvarMotorista(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const session = await requireSession();
-  const parsed = motoristaSchema.safeParse(formDataToObject(formData));
+  const parsed = motoristaSchemaPara(dadosPessoaisObrigatorios()).safeParse(formDataToObject(formData));
   if (!parsed.success) return fail('Corrija os campos destacados.', flattenErrors(parsed.error));
 
   const { id, filial_id: requestedFilial, cnh_frente_path, cnh_verso_path, ...dados } = parsed.data;
   const values = {
     ...dados,
+    // opcionais na fase de testes (ver lib/motoristas/obrigatorios): vazio grava null
+    cpf: dados.cpf ?? null,
+    whatsapp: dados.whatsapp ?? null,
+    cnh: dados.cnh ?? null,
+    cnh_categoria: dados.cnh_categoria ?? null,
+    cnh_validade: dados.cnh_validade ?? null,
     cnh_primeira_habilitacao: dados.cnh_primeira_habilitacao ?? null,
     cnh_emissao: dados.cnh_emissao ?? null,
     cnh_uf: dados.cnh_uf ?? null,

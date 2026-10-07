@@ -205,6 +205,19 @@ describe('vínculo de login e cadastro', () => {
     });
   });
 
+  it('fase de testes: motorista só com nome e e-mail; preenchidos, os formatos continuam conferidos', async () => {
+    await as(SUP_SP, async () => {
+      const { rows: [m] } = await db.query<{ cpf: string | null; whatsapp: string | null; cnh: string | null }>(
+        `insert into public.motoristas (filial_id, nome, email) values ($1, 'Motorista Teste', 'teste1@x.com') returning cpf, whatsapp, cnh`,
+        [F_SP],
+      );
+      expect(m).toEqual({ cpf: null, whatsapp: null, cnh: null });
+      await expect(
+        db.query(`insert into public.motoristas (filial_id, nome, email, cpf) values ($1, 'Teste 2', 'teste2@x.com', '123')`, [F_SP]),
+      ).rejects.toThrow(/cpf_check/);
+    });
+  });
+
   it('o nome do motorista no login acompanha o cadastro', async () => {
     await as(SUP_SP, async () => {
       await db.query(`update public.motoristas set nome = 'Diogo Soares' where id = $1`, [M_1]);

@@ -87,11 +87,11 @@ export default async function PerfilPage() {
               <dl className="grid grid-cols-1 gap-3 text-sm">
                 <div>
                   <dt className="text-xs text-muted-foreground">CPF</dt>
-                  <dd className="font-semibold">{formatCpf(cadastro.cpf)}</dd>
+                  <dd className="font-semibold">{cadastro.cpf ? formatCpf(cadastro.cpf) : '—'}</dd>
                 </div>
                 <div>
                   <dt className="text-xs text-muted-foreground">WhatsApp</dt>
-                  <dd className="font-semibold">{formatWhatsapp(cadastro.whatsapp)}</dd>
+                  <dd className="font-semibold">{cadastro.whatsapp ? formatWhatsapp(cadastro.whatsapp) : '—'}</dd>
                 </div>
                 <div>
                   <dt className="text-xs text-muted-foreground">E-mail</dt>
