@@ -70,10 +70,21 @@ export function paraJsonSchema(s: unknown): unknown {
   return saida;
 }
 
+/**
+ * Teto da resposta (o JSON do cupom tem ~400 tokens; o raciocínio reduzido, alguns milhares).
+ * Sem ele, quando o modo JSON "dispara" (espaços e quebras de linha sem fim), o modelo fica
+ * gerando até o tempo acabar e a leitura volta como "não respondeu".
+ */
+export const LIMITE_DE_TOKENS = 8192;
+
 /** Texto e generationConfig do pedido nesta forma. */
 export function montarPedido(f: Forma, instrucoes: string, schema: Record<string, unknown>) {
   const formato = FORMATOS_DE_RESPOSTA[f.formato];
-  const generationConfig: Record<string, unknown> = { responseMimeType: 'application/json', ...AJUSTES_DE_PENSAMENTO[f.pensar] };
+  const generationConfig: Record<string, unknown> = {
+    responseMimeType: 'application/json',
+    maxOutputTokens: LIMITE_DE_TOKENS,
+    ...AJUSTES_DE_PENSAMENTO[f.pensar],
+  };
   let texto = instrucoes;
   if (formato === 'responseSchema') generationConfig.responseSchema = schema;
   else if (formato === 'responseJsonSchema') generationConfig.responseJsonSchema = paraJsonSchema(schema);

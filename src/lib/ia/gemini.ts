@@ -1,5 +1,5 @@
 import 'server-only';
-import { ErroIA, classificarFalha, extrairJson } from './gemini-resposta';
+import { ErroIA, RESPOSTA_CORTADA, classificarFalha, extrairJson } from './gemini-resposta';
 import { descreverForma, montarPedido, proximaForma, type Forma } from './gemini-formas';
 
 /**
@@ -171,7 +171,14 @@ async function lerComModelo(
       return json;
     } catch (e) {
       const erro = e instanceof ErroIA ? e : new ErroIA('resposta_invalida');
-      anotar(`${modelo}: ${erro.detalhe ?? erro.codigo}`);
+      anotar(`${modelo} (${descreverForma(forma)}): ${erro.detalhe ?? erro.codigo}`);
+      // resposta que "disparou" até o limite: o formato seguinte costuma não repetir o defeito
+      const proxima = erro.detalhe?.startsWith(RESPOSTA_CORTADA) ? proximaForma(forma, 'schema') : null;
+      if (proxima && proxima.formato !== forma.formato && !p.prazo.aborted) {
+        formaAceita.delete(modelo);
+        forma = proxima;
+        continue;
+      }
       throw erro;
     }
   }

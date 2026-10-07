@@ -35,6 +35,9 @@ export function classificarFalha(status: number, corpo: string): ErroIA {
   return new ErroIA('resposta_invalida', `${status} ${texto}`);
 }
 
+/** Início do detalhe quando a resposta passou do limite de tokens (quem chama tenta outro formato). */
+export const RESPOSTA_CORTADA = 'resposta cortada (MAX_TOKENS)';
+
 interface RespostaGemini {
   candidates?: Array<{ content?: { parts?: Array<{ text?: string; thought?: boolean }> }; finishReason?: string }>;
   promptFeedback?: { blockReason?: string };
@@ -57,6 +60,8 @@ export function extrairJson(corpo: unknown): unknown {
   try {
     return JSON.parse(texto);
   } catch {
+    // o modo JSON às vezes "dispara" (espaços e quebras de linha sem fim) até bater no limite de tokens
+    if (candidato?.finishReason === 'MAX_TOKENS') throw new ErroIA('resposta_invalida', `${RESPOSTA_CORTADA}: ${texto.slice(0, 120)}`);
     throw new ErroIA('resposta_invalida', `JSON inválido: ${texto.slice(0, 200)}`);
   }
 }

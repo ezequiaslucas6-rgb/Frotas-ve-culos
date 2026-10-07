@@ -93,6 +93,17 @@ describe('chamada ao Gemini', () => {
     expect(ultimo.texto).toContain('"litros":{"type":["number","null"]}');
   });
 
+  it('resposta que "dispara" até o limite de tokens: tenta o formato seguinte', async () => {
+    const cortada = new Response(
+      JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"litros": 4' + '\n'.repeat(50) }] }, finishReason: 'MAX_TOKENS' }] }),
+      { status: 200 },
+    );
+    const f = vi.fn().mockResolvedValueOnce(cortada).mockResolvedValueOnce(ok({ litros: 4 }));
+    vi.stubGlobal('fetch', f);
+    await expect(chamar()).resolves.toMatchObject({ modelo: 'flash', json: { litros: 4 } });
+    expect(pedidos(f).map((p) => p.formato)).toEqual(['responseSchema', 'responseJsonSchema']);
+  });
+
   it('limite no primeiro modelo: usa o próximo', async () => {
     const f = vi.fn().mockResolvedValueOnce(erro(429, 'quota')).mockResolvedValueOnce(ok({ litros: 3 }));
     vi.stubGlobal('fetch', f);

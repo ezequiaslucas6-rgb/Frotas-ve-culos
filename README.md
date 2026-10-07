@@ -218,6 +218,10 @@ valor total, desconto, combustível, data e posto. A pessoa confere e registra.
   começa em paralelo e vale a primeira resposta (o mais lento é cancelado); a leitura toda tem até 45 s. O
   resumo mostra quanto levou cada etapa (*foto · envio · leitura*). Se a leitura falhar, a tela
   **Testar leitura de cupons** (Administrador Geral) mostra o motivo exato devolvido pelo Google.
+- **Resposta que não termina:** o modo JSON do Gemini às vezes "dispara" (espaços e quebras de linha sem fim). A
+  resposta tem teto de tokens; se bate nele, o sistema repete no formato seguinte.
+- **Diagnóstico na VPS:** `bash /opt/frotas/deploy/testar-gemini.sh [foto-do-cupom.jpg]` chama cada modelo de dentro do
+  container (mesma chave e rede) e mostra status, tempo, tokens e o começo da resposta.
 - Nota com outros produtos (ARLA, óleo…): usa a linha do combustível; desconto só da nota inteira é dividido
   proporcionalmente, com aviso.
 - Modelos ajustados com notas reais da frota: **NFC-e** (sistema xpert: quantidade impressa com ponto, "5.413 LT" =
