@@ -17,4 +17,6 @@
     <string name="lembretes_canal_descricao">Checklist do dia às 08:00 e, para o supervisor, o resumo das 08:30.</string>
     <string name="lembrete_offline_titulo">Bom dia! Hora do checklist</string>
     <string name="lembrete_offline_texto">Faça o checklist do veículo antes de sair (o diário até as 08:30; no sábado e no domingo, o semanal).</string>
+    <string name="lembrete_sem_login_titulo">Entre no app para receber os lembretes</string>
+    <string name="lembrete_sem_login_texto">A sessão deste celular foi encerrada. Abra o app e entre com seu e-mail e senha para continuar recebendo o lembrete do checklist.</string>
 </resources>

@@ -23,6 +23,8 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.time.ZoneId
 import java.time.ZonedDateTime
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 /**
@@ -112,6 +114,8 @@ object Lembretes {
             // a sessão renovada pelo sistema volta para o app (como faria o WebView)
             val novos = conexao.headerFields.filterKeys { it.equals("Set-Cookie", ignoreCase = true) }.values.flatten()
             if (novos.isNotEmpty()) guardarCookies(endereco, novos)
+            // 401, ou o redirecionamento para a tela de entrada: a sessão deste celular acabou
+            if (status == HttpURLConnection.HTTP_UNAUTHORIZED || status in 300..399) return Resposta(emptyList(), null, semLogin = true)
             if (status != HttpURLConnection.HTTP_OK) return Resposta(emptyList(), null)
             val json = JSONObject(conexao.inputStream.bufferedReader().use { it.readText() })
             val lista = json.optJSONArray("notificacoes")
@@ -129,16 +133,28 @@ object Lembretes {
         }
     }
 
+    /**
+     * Grava a sessão renovada ANTES de o alarme terminar. O Supabase troca o "refresh token" a
+     * cada renovação e o antigo deixa de valer: se o novo se perdesse (o Android encerra o
+     * processo logo depois do alarme), o app voltaria com o antigo e o Supabase encerraria a
+     * sessão por reuso, e o motorista teria de entrar de novo.
+     */
     private fun guardarCookies(url: String, cookies: List<String>) {
+        val gravado = CountDownLatch(1)
         Handler(Looper.getMainLooper()).post {
-            val gerenciador = CookieManager.getInstance()
-            cookies.forEach { gerenciador.setCookie(url, it) }
-            gerenciador.flush()
+            try {
+                val gerenciador = CookieManager.getInstance()
+                cookies.forEach { gerenciador.setCookie(url, it) }
+                gerenciador.flush()
+            } finally {
+                gravado.countDown()
+            }
         }
+        gravado.await(3, TimeUnit.SECONDS) // roda fora da thread principal (sem travar o app)
     }
 
     data class Aviso(val id: String, val titulo: String, val texto: String, val url: String)
-    data class Resposta(val avisos: List<Aviso>, val papel: String?)
+    data class Resposta(val avisos: List<Aviso>, val papel: String?, val semLogin: Boolean = false)
 }
 
 /** Dispara nos horários dos lembretes e reagenda depois de reiniciar o celular ou atualizar o app. */
@@ -161,6 +177,18 @@ class LembreteReceiver : BroadcastReceiver() {
                             context.getString(R.string.lembrete_offline_titulo),
                             context.getString(R.string.lembrete_offline_texto),
                             "/meu-veiculo",
+                        )
+                    }
+                } else if (resposta.semLogin) {
+                    // saiu do app (ou a sessão foi encerrada): avisa no horário do papel dele, para não ficar sem lembrete
+                    val papel = prefs.getString("papel", null)
+                    if (papel != null && (papel == "motorista") == (momento == "0800")) {
+                        Lembretes.notificar(
+                            context,
+                            "sem-login",
+                            context.getString(R.string.lembrete_sem_login_titulo),
+                            context.getString(R.string.lembrete_sem_login_texto),
+                            "/login",
                         )
                     }
                 } else {

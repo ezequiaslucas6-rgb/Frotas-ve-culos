@@ -119,6 +119,12 @@ Na hora, o app pergunta ao sistema o que avisar (`/api/lembretes`, com o login d
 o motorista recebe um lembrete simples. Na primeira abertura o Android pede para permitir notificações (Android 13+).
 Os alarmes voltam sozinhos depois de reiniciar o celular.
 
+**Login no celular.** A sessão fica salva no app e não expira sozinha: o cookie vale 400 dias e é renovado a cada uso
+(inclusive pelo lembrete das 08:00, que grava a sessão renovada antes de terminar). Ela só acaba se a pessoa tocar em
+*Sair*, se a senha for trocada, ou se o projeto do Supabase limitar as sessões (*Authentication → Sessions*:
+*Time-box user sessions* e *Inactivity timeout* devem ficar desligados, ou em 30 dias ou mais). Se a sessão acabar, o
+lembrete das 08:00 vira *Entre no app para receber os lembretes*, para o motorista não ficar sem aviso.
+
 ## 4. Desenvolvimento
 ```bash
 npm install

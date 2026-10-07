@@ -45,13 +45,6 @@ interface AbastecimentoFormProps {
 const SALTO_SUSPEITO = 3000;
 /** Data lida do cupom só é usada se for recente (evita ano/mês trocados). */
 const DIAS_DATA_CUPOM = 60;
-/** Resultado e quanto levou (ms). */
-async function cronometrar<T>(fn: () => Promise<T>): Promise<[T, number]> {
-  const inicio = performance.now();
-  const r = await fn();
-  return [r, Math.round(performance.now() - inicio)];
-}
-
 const CODIGOS_SEM_NOVA_TENTATIVA = new Set(['sem_chave', 'chave_invalida', 'regiao', 'modelo', 'limite', 'limite_usuario', 'recusado']);
 
 export function AbastecimentoForm({ veiculos, motoristas, veiculoInicial, combustivelInicial, hoje, leituraAutomatica }: AbastecimentoFormProps) {
@@ -79,15 +72,13 @@ export function AbastecimentoForm({ veiculos, motoristas, veiculoInicial, combus
     desconto: descontoNum && Number.isFinite(descontoNum) ? descontoNum : 0,
   });
 
-  async function ler(caminho: string, envio?: { preparo: number; envio: number }) {
+  async function ler(caminho: string) {
     if (!veiculo) return;
     cupomAtual.current = caminho;
     setLeitura({ fase: 'lendo' });
     setRegistro(null);
-    const [r, leituraMs] = await cronometrar(() =>
-      lerCupom({ veiculoId: veiculo.id, caminho }).catch(
-        (): Awaited<ReturnType<typeof lerCupom>> => ({ ok: false, codigo: 'rede', mensagem: 'Sem conexão para ler o cupom. Preencha à mão ou tente de novo.' }),
-      ),
+    const r = await lerCupom({ veiculoId: veiculo.id, caminho }).catch(
+      (): Awaited<ReturnType<typeof lerCupom>> => ({ ok: false, codigo: 'rede', mensagem: 'Sem conexão para ler o cupom. Preencha à mão ou tente de novo.' }),
     );
     if (cupomAtual.current !== caminho) return; // trocaram a foto enquanto lia
     if (!r.ok) {
@@ -131,13 +122,8 @@ export function AbastecimentoForm({ veiculos, motoristas, veiculoInicial, combus
       preenchidos.push('KM');
     }
     setRegistro(reg);
-    setLeitura({
-      fase: 'pronta',
-      calculo: c,
-      preenchidos,
-      tempos: { preparo: envio?.preparo, envio: envio?.envio, leitura: leituraMs, ia: r.tempos?.ia },
-      modelo: reg.modelo,
-    });
+    // tempo e modelo da leitura só aparecem na tela de teste (Testar leitura de cupons)
+    setLeitura({ fase: 'pronta', calculo: c, preenchidos });
   }
 
   return (
@@ -220,11 +206,11 @@ export function AbastecimentoForm({ veiculos, motoristas, veiculoInicial, combus
                     ? 'Fotografe o cupom inteiro, de perto e sem reflexo: os valores são lidos sozinhos.'
                     : 'Fotografe o cupom inteiro, de perto e sem reflexo.'
               }
-              onEnviado={(caminho, tempos) => {
+              onEnviado={(caminho) => {
                 cupomAtual.current = caminho;
                 setRegistro(null);
                 setLeitura(null);
-                if (caminho && leituraAutomatica) void ler(caminho, tempos);
+                if (caminho && leituraAutomatica) void ler(caminho);
               }}
             />
             {leitura ? (
