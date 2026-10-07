@@ -64,7 +64,7 @@ export async function gerarJsonDeImagem({
   const encerrar = new AbortController(); // um modelo respondeu: cancela os outros
   const prazo = AbortSignal.any([encerrar.signal, AbortSignal.timeout(TEMPO_TOTAL_MS)]);
   const motivos: string[] = [];
-  const pedido = { chave, imagemBase64, mimeType, instrucoes, schema, prazo, cancelado: encerrar.signal, motivos };
+  const pedido = { chave, imagemBase64, mimeType, instrucoes, schema, prazo, cancelado: encerrar.signal, motivos, inicio };
 
   return new Promise((resolve, reject) => {
     let proximo = 0;
@@ -109,7 +109,12 @@ export async function gerarJsonDeImagem({
           iniciar(); // falhou: o próximo entra na hora
         },
       );
-      if (proximo < modelos.length) reserva = setTimeout(iniciar, ESPERA_ANTES_DO_RESERVA_MS);
+      if (proximo < modelos.length) {
+        reserva = setTimeout(() => {
+          console.warn(`[gemini] ${modelo} sem resposta em ${ESPERA_ANTES_DO_RESERVA_MS / 1000} s: ${modelos[proximo]} começa em paralelo`);
+          iniciar();
+        }, ESPERA_ANTES_DO_RESERVA_MS);
+      }
     };
     iniciar();
   });
@@ -118,7 +123,7 @@ export async function gerarJsonDeImagem({
 /** Lê com um modelo, procurando a forma de pedir que ele aceita. Erro = esse modelo não serve agora. */
 async function lerComModelo(
   modelo: string,
-  p: { chave: string; imagemBase64: string; mimeType: string; instrucoes: string; schema: Record<string, unknown>; prazo: AbortSignal; cancelado: AbortSignal; motivos: string[] },
+  p: { chave: string; imagemBase64: string; mimeType: string; instrucoes: string; schema: Record<string, unknown>; prazo: AbortSignal; cancelado: AbortSignal; motivos: string[]; inicio: number },
 ): Promise<unknown> {
   const anotar = (motivo: string) => {
     if (p.cancelado.aborted) return; // outro modelo já respondeu
@@ -161,7 +166,9 @@ async function lerComModelo(
     }
     formaAceita.set(modelo, forma);
     try {
-      return extrairJson(await resposta.json());
+      const json = extrairJson(await resposta.json());
+      console.info(`[gemini] ${modelo} (${descreverForma(forma)}): lido em ${((Date.now() - p.inicio) / 1000).toFixed(1)} s`);
+      return json;
     } catch (e) {
       const erro = e instanceof ErroIA ? e : new ErroIA('resposta_invalida');
       anotar(`${modelo}: ${erro.detalhe ?? erro.codigo}`);
