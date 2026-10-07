@@ -209,9 +209,13 @@ valor total, desconto, combustível, data e posto. A pessoa confere e registra.
   estar errado, nada é adivinhado: a pessoa confere na foto.
 - **KM impresso** (digitado pelo frentista): só preenche o hodômetro se estiver entre o último KM do veículo e 3.000 km
   acima dele; fora disso, avisa e deixa para digitar (KM errado estragaria o consumo).
-- **Velocidade:** o modelo responde sem "raciocínio" (mais rápido) quando ele permite; se o Google recusar esse ajuste,
-  o sistema repete a leitura com a chamada simples e lembra disso para as próximas. Cada modelo tem no máximo 25 s
-  (40 s no total). O resumo mostra quanto levou cada etapa (*foto · envio · leitura*). Se a leitura falhar, a tela
+- **Velocidade e modelos novos:** o modelo responde com o mínimo de "raciocínio" (mais rápido) e no formato
+  pedido. O Google troca o modelo por trás de `gemini-flash-latest` sem aviso, e cada família aceita ajustes
+  diferentes (a 3.x recusa `thinkingBudget: 0`, algumas recusam `thinkingLevel: "minimal"`, e o `responseSchema`
+  virou legado). Se o Google recusar o pedido, o sistema lê a mensagem e repete com o ajuste seguinte
+  (raciocínio: `thinkingBudget 0` → `minimal` → `low` → padrão; formato: `responseSchema` → `responseJsonSchema` →
+  só JSON) e lembra do que funcionou para as próximas leituras. Cada modelo tem no máximo 25 s (45 s no total). O
+  resumo mostra quanto levou cada etapa (*foto · envio · leitura*). Se a leitura falhar, a tela
   **Testar leitura de cupons** (Administrador Geral) mostra o motivo exato devolvido pelo Google.
 - Nota com outros produtos (ARLA, óleo…): usa a linha do combustível; desconto só da nota inteira é dividido
   proporcionalmente, com aviso.
@@ -225,7 +229,8 @@ valor total, desconto, combustível, data e posto. A pessoa confere e registra.
 - **Chave gratuita:** crie em [aistudio.google.com/apikey](https://aistudio.google.com/apikey), coloque em
   `GEMINI_API_KEY` no `/opt/frotas/.env` da VPS e rode o instalador. A chave fica só no servidor.
   `GEMINI_MODELOS` define a ordem dos modelos (padrão `gemini-flash-latest,gemini-flash-lite-latest`): se o limite
-  gratuito de um acabar, usa o próximo. Sem chave, sem cota ou sem internet, o lançamento é digitado à mão (as
+  gratuito de um acabar, usa o próximo. Os dois `-latest` entram sempre no fim da lista, então um modelo
+  configurado que o Google desligou não deixa a leitura parada. Sem chave, sem cota ou sem internet, o lançamento é digitado à mão (as
   contas continuam automáticas).
 - No plano gratuito, o Google pode usar as imagens enviadas para melhorar os produtos dele. Para que isso não
   aconteça, ative o faturamento no projeto da chave (plano pago).

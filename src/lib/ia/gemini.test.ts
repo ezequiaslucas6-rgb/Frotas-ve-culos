@@ -1,18 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { esquecerFormasAceitas, FORMAS_DE_CHAMADA, gerarJsonDeImagem } from './gemini';
+import { esquecerFormasAceitas, gerarJsonDeImagem, modelosGemini } from './gemini';
+import { paraJsonSchema, proximaForma } from './gemini-formas';
 
 const ok = (json: unknown) =>
   new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(json) }] }, finishReason: 'STOP' }] }), { status: 200 });
 const erro = (status: number, message: string) => new Response(JSON.stringify({ error: { code: status, message, status: 'INVALID_ARGUMENT' } }), { status });
-const chamar = () => gerarJsonDeImagem({ imagemBase64: 'AAAA', mimeType: 'image/jpeg', instrucoes: 'leia', schema: {} });
+const SCHEMA = { type: 'OBJECT', properties: { litros: { type: 'NUMBER', nullable: true } } };
+const chamar = () => gerarJsonDeImagem({ imagemBase64: 'AAAA', mimeType: 'image/jpeg', instrucoes: 'leia', schema: SCHEMA });
 
-/** o que foi pedido em cada chamada: modelo e os ajustes do generationConfig */
+/** o que foi pedido em cada chamada: modelo, raciocínio e formato da resposta */
 const pedidos = (f: ReturnType<typeof vi.fn>) =>
   f.mock.calls.map(([url, init]) => {
-    const config = { ...JSON.parse((init as RequestInit).body as string).generationConfig };
-    delete config.responseMimeType;
-    delete config.responseSchema;
-    return { modelo: decodeURIComponent(String(url).split('/models/')[1]!.split(':')[0]!), ajustes: config };
+    const corpo = JSON.parse((init as RequestInit).body as string);
+    const c = corpo.generationConfig;
+    const formato = c.responseSchema ? 'responseSchema' : c.responseJsonSchema ? 'responseJsonSchema' : 'json';
+    return {
+      modelo: decodeURIComponent(String(url).split('/models/')[1]!.split(':')[0]!),
+      pensar: c.thinkingConfig ?? {},
+      formato,
+      texto: corpo.contents[0].parts[1].text as string,
+    };
   });
 
 describe('chamada ao Gemini', () => {
@@ -26,26 +33,54 @@ describe('chamada ao Gemini', () => {
     vi.unstubAllEnvs();
   });
 
-  it('pede sem "raciocínio" e devolve o JSON', async () => {
+  it('os "-latest" entram sempre no fim da lista (modelo configurado desligado não para a leitura)', () => {
+    expect(modelosGemini()).toEqual(['flash', 'lite', 'gemini-flash-latest', 'gemini-flash-lite-latest']);
+    vi.stubEnv('GEMINI_MODELOS', '');
+    expect(modelosGemini()).toEqual(['gemini-flash-latest', 'gemini-flash-lite-latest']);
+  });
+
+  it('pede sem "raciocínio", com o schema, e devolve o JSON', async () => {
     const f = vi.fn().mockResolvedValue(ok({ litros: 40.35 }));
     vi.stubGlobal('fetch', f);
     await expect(chamar()).resolves.toMatchObject({ modelo: 'flash', json: { litros: 40.35 } });
-    expect(pedidos(f)).toEqual([{ modelo: 'flash', ajustes: FORMAS_DE_CHAMADA[0] }]);
+    expect(pedidos(f)).toMatchObject([{ modelo: 'flash', pensar: { thinkingBudget: 0 }, formato: 'responseSchema' }]);
   });
 
-  it('modelo que recusa o ajuste (400, qualquer mensagem) é chamado de novo de outra forma, até a simples', async () => {
+  it('modelo 3.x que recusa thinkingBudget 0 e "minimal": usa "low" e lembra disso', async () => {
     const f = vi
       .fn()
-      .mockResolvedValueOnce(erro(400, 'Media resolution is not supported for this model.'))
-      .mockResolvedValueOnce(erro(400, 'Thinking level is not supported for this model.'))
+      .mockResolvedValueOnce(erro(400, 'Request contains an invalid argument.'))
+      .mockResolvedValueOnce(erro(400, 'Thinking level MINIMAL is not supported for this model. Please retry with other thinking level.'))
       .mockResolvedValueOnce(ok({ litros: 1 }));
     vi.stubGlobal('fetch', f);
     await expect(chamar()).resolves.toMatchObject({ modelo: 'flash' });
-    expect(pedidos(f).map((p) => p.ajustes)).toEqual([FORMAS_DE_CHAMADA[0], FORMAS_DE_CHAMADA[1], {}]);
+    expect(pedidos(f).map((p) => p.pensar)).toEqual([{ thinkingBudget: 0 }, { thinkingLevel: 'minimal' }, { thinkingLevel: 'low' }]);
     // a próxima leitura já vai direto na forma aceita
     f.mockResolvedValueOnce(ok({ litros: 2 }));
     await chamar();
-    expect(pedidos(f).at(-1)).toEqual({ modelo: 'flash', ajustes: {} });
+    expect(pedidos(f).at(-1)).toMatchObject({ modelo: 'flash', pensar: { thinkingLevel: 'low' }, formato: 'responseSchema' });
+  });
+
+  it('schema recusado: passa para responseJsonSchema sem mexer no raciocínio', async () => {
+    const f = vi
+      .fn()
+      .mockResolvedValueOnce(erro(400, 'Invalid JSON payload received. Unknown name "responseSchema" at \'generation_config\': Cannot find field.'))
+      .mockResolvedValueOnce(ok({ litros: 1 }));
+    vi.stubGlobal('fetch', f);
+    await chamar();
+    expect(pedidos(f).map(({ pensar, formato }) => ({ pensar, formato }))).toEqual([
+      { pensar: { thinkingBudget: 0 }, formato: 'responseSchema' },
+      { pensar: { thinkingBudget: 0 }, formato: 'responseJsonSchema' },
+    ]);
+  });
+
+  it('último recurso: só JSON, com o formato descrito no texto', async () => {
+    const f = vi.fn().mockResolvedValueOnce(erro(400, 'responseSchema: bad')).mockResolvedValueOnce(erro(400, 'responseJsonSchema: bad')).mockResolvedValueOnce(ok({ litros: 1 }));
+    vi.stubGlobal('fetch', f);
+    await chamar();
+    const ultimo = pedidos(f).at(-1)!;
+    expect(ultimo.formato).toBe('json');
+    expect(ultimo.texto).toContain('"litros":{"type":["number","null"]}');
   });
 
   it('limite no primeiro modelo: usa o próximo', async () => {
@@ -56,7 +91,10 @@ describe('chamada ao Gemini', () => {
 
   it('recusado em todas as formas e modelos: erro "recusado" com o motivo do Google', async () => {
     vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => erro(400, 'Request contains an invalid argument.')));
-    await expect(chamar()).rejects.toMatchObject({ codigo: 'recusado', detalhe: expect.stringMatching(/flash \(forma 3\): 400 INVALID_ARGUMENT Request contains an invalid argument/) });
+    await expect(chamar()).rejects.toMatchObject({
+      codigo: 'recusado',
+      detalhe: expect.stringMatching(/flash \(padrão, json\): 400 INVALID_ARGUMENT Request contains an invalid argument/),
+    });
   });
 
   it('chave inválida para na hora (outro modelo não resolve)', async () => {
@@ -64,5 +102,26 @@ describe('chamada ao Gemini', () => {
     vi.stubGlobal('fetch', f);
     await expect(chamar()).rejects.toMatchObject({ codigo: 'chave_invalida' });
     expect(f).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('formas de pedir', () => {
+  it('mensagem genérica: esgota o raciocínio e recomeça no formato seguinte', () => {
+    expect(proximaForma({ pensar: 3, formato: 0 }, 'invalid argument')).toEqual({ pensar: 0, formato: 1 });
+    expect(proximaForma({ pensar: 3, formato: 2 }, 'invalid argument')).toBeNull();
+  });
+
+  it('converte o schema do Gemini em JSON Schema', () => {
+    expect(
+      paraJsonSchema({
+        type: 'OBJECT',
+        properties: { c: { type: 'STRING', nullable: true, enum: ['a', 'b'] }, k: { type: 'INTEGER', description: 'km' } },
+        required: ['c', 'k'],
+      }),
+    ).toEqual({
+      type: 'object',
+      properties: { c: { type: ['string', 'null'], enum: ['a', 'b', null] }, k: { type: 'integer', description: 'km' } },
+      required: ['c', 'k'],
+    });
   });
 });

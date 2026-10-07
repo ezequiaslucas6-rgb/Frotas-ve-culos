@@ -1,5 +1,6 @@
 import 'server-only';
 import { ErroIA, classificarFalha, extrairJson } from './gemini-resposta';
+import { descreverForma, montarPedido, proximaForma, type Forma } from './gemini-formas';
 
 /**
  * Gemini (Google AI Studio) pela API REST, só no servidor: a chave fica no .env da VPS
@@ -7,44 +8,39 @@ import { ErroIA, classificarFalha, extrairJson } from './gemini-resposta';
  *
  * GEMINI_MODELOS: modelos em ordem de preferência, separados por vírgula. Se um não existir
  * mais, estourar o limite gratuito ou estiver fora do ar, tenta o próximo. Os "-latest"
- * acompanham sozinhos as versões novas do Google. O Flash vem antes do Flash-Lite: lê melhor
- * os dígitos miúdos (o Lite trocou 40,35 por 45,35 numa DANFE) e, sem "pensar", é rápido.
+ * acompanham sozinhos as versões novas do Google e entram sempre no fim da lista (um modelo
+ * configurado que o Google desligou não deixa a leitura parada). O Flash vem antes do
+ * Flash-Lite: lê melhor os dígitos miúdos (o Lite trocou 40,35 por 45,35 numa DANFE).
  */
-const MODELOS_PADRAO = 'gemini-flash-latest,gemini-flash-lite-latest';
+const MODELOS_PADRAO = ['gemini-flash-latest', 'gemini-flash-lite-latest'];
 
 export const iaConfigurada = () => Boolean(process.env.GEMINI_API_KEY?.trim());
 
-export const modelosGemini = () =>
-  (process.env.GEMINI_MODELOS?.trim() || MODELOS_PADRAO)
+export const modelosGemini = () => {
+  const configurados = (process.env.GEMINI_MODELOS ?? '')
     .split(',')
     .map((m) => m.trim())
     .filter(Boolean);
+  return [...new Set([...configurados, ...MODELOS_PADRAO])];
+};
 
 // GEMINI_API_URL só existe para os testes (servidor simulado)
 const urlBase = () => (process.env.GEMINI_API_URL?.trim() || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/$/, '');
 
 /**
- * Leitura de foto pede rapidez, não raciocínio: sem "pensar" o modelo responde em poucos
- * segundos (pensando, passa de 15 s). Cada família de modelo desliga o raciocínio de um
- * jeito (2.x: thinkingBudget 0; 3.x: thinkingLevel "minimal") e alguns não deixam. Por isso
- * a chamada tenta as formas em ordem e, se o Google recusar (400), passa para a próxima; a
- * última é a chamada simples, sem ajuste nenhum (a que sempre funcionou). A forma aceita
- * por cada modelo fica guardada, então a recusa só custa tempo na primeira leitura.
+ * Cada modelo aceita um jeito de pedir (ver ./gemini-formas). A forma que deu certo fica
+ * guardada por modelo: a busca (e o tempo que ela custa) só acontece na primeira leitura,
+ * e de novo quando o Google troca o modelo por trás de um "-latest".
  */
-export const FORMAS_DE_CHAMADA: ReadonlyArray<Record<string, unknown>> = [
-  { thinkingConfig: { thinkingBudget: 0 } },
-  { thinkingConfig: { thinkingLevel: 'minimal' } },
-  {},
-];
-const formaAceita = new Map<string, number>();
+const formaAceita = new Map<string, Forma>();
 /** Só para os testes: esquece as formas aceitas. */
 export const esquecerFormasAceitas = () => formaAceita.clear();
 
 /** Tempo máximo por modelo e no total (a pessoa está esperando com o formulário aberto). */
 const TEMPO_POR_MODELO_MS = 25_000;
-const TEMPO_TOTAL_MS = 40_000;
+const TEMPO_TOTAL_MS = 45_000;
 
-/** Envia uma imagem com as instruções e devolve o JSON no formato pedido (`schema`). */
+/** Envia uma imagem com as instruções e devolve o JSON no formato pedido (`schema`, OpenAPI do Gemini). */
 export async function gerarJsonDeImagem({
   imagemBase64,
   mimeType,
@@ -63,35 +59,43 @@ export async function gerarJsonDeImagem({
   let ultimo: ErroIA | null = null;
   const motivos: string[] = [];
   for (const modelo of modelosGemini()) {
-    for (let forma = formaAceita.get(modelo) ?? 0; forma < FORMAS_DE_CHAMADA.length; forma++) {
+    let forma: Forma | null = formaAceita.get(modelo) ?? { pensar: 0, formato: 0 };
+    while (forma) {
       const restante = TEMPO_TOTAL_MS - (Date.now() - inicio);
       if (restante < 3_000) break;
+      const { texto, generationConfig } = montarPedido(forma, instrucoes, schema);
       let resposta: Response;
       try {
         resposta = await fetch(`${urlBase()}/models/${encodeURIComponent(modelo)}:generateContent`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-goog-api-key': chave },
           body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ inline_data: { mime_type: mimeType, data: imagemBase64 } }, { text: instrucoes }] }],
-            generationConfig: { responseMimeType: 'application/json', responseSchema: schema, ...FORMAS_DE_CHAMADA[forma] },
+            contents: [{ role: 'user', parts: [{ inline_data: { mime_type: mimeType, data: imagemBase64 } }, { text: texto }] }],
+            generationConfig,
           }),
           signal: AbortSignal.timeout(Math.min(TEMPO_POR_MODELO_MS, restante)),
           cache: 'no-store',
         });
       } catch {
         ultimo = new ErroIA('indisponivel', `${modelo}: sem resposta`);
-        motivos.push(`${modelo}: sem resposta`);
+        motivos.push(`${modelo} (${descreverForma(forma)}): sem resposta`);
         break;
       }
       if (!resposta.ok) {
         const corpo = await resposta.text().catch(() => '');
         const erro = classificarFalha(resposta.status, corpo);
         if (erro.codigo === 'chave_invalida' || erro.codigo === 'regiao') throw erro; // outro modelo não resolve
-        const motivo = `${modelo} (forma ${forma + 1}): ${resposta.status} ${resumirErro(corpo)}`;
+        const mensagem = resumirErro(corpo);
+        const motivo = `${modelo} (${descreverForma(forma)}): ${resposta.status} ${mensagem}`;
         motivos.push(motivo);
         console.warn(`[gemini] ${motivo}`);
-        // 400 = o modelo recusou o pedido (ex.: um ajuste que ele não aceita): tenta a próxima forma
-        if (resposta.status === 400 && forma < FORMAS_DE_CHAMADA.length - 1) continue;
+        // 400 = o modelo recusou algo do pedido: tenta a próxima forma, guiada pela mensagem do Google
+        const proxima: Forma | null = resposta.status === 400 ? proximaForma(forma, mensagem) : null;
+        if (proxima) {
+          forma = proxima;
+          continue;
+        }
+        formaAceita.delete(modelo);
         ultimo = new ErroIA(erro.codigo === 'resposta_invalida' ? 'recusado' : erro.codigo, motivos.join(' | '));
         break;
       }
