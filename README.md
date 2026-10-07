@@ -213,8 +213,9 @@ valor total, desconto, combustível, data e posto. A pessoa confere e registra.
   pedido. O Google troca o modelo por trás de `gemini-flash-latest` sem aviso, e cada família aceita ajustes
   diferentes (a 3.x recusa `thinkingBudget: 0`, algumas recusam `thinkingLevel: "minimal"`, e o `responseSchema`
   virou legado). Se o Google recusar o pedido, o sistema lê a mensagem e repete com o ajuste seguinte
-  (raciocínio: `thinkingBudget 0` → `minimal` → `low` → padrão; formato: `responseSchema` → `responseJsonSchema` →
-  só JSON) e lembra do que funcionou para as próximas leituras. Cada modelo tem no máximo 25 s (45 s no total). O
+  (raciocínio: `minimal` → `low` → `thinkingBudget 0` → padrão; formato: `responseSchema` → `responseJsonSchema` →
+  só JSON) e lembra do que funcionou para as próximas leituras. Se o modelo não responde em 10 s, o próximo da lista
+  começa em paralelo e vale a primeira resposta (o mais lento é cancelado); a leitura toda tem até 45 s. O
   resumo mostra quanto levou cada etapa (*foto · envio · leitura*). Se a leitura falhar, a tela
   **Testar leitura de cupons** (Administrador Geral) mostra o motivo exato devolvido pelo Google.
 - Nota com outros produtos (ARLA, óleo…): usa a linha do combustível; desconto só da nota inteira é dividido

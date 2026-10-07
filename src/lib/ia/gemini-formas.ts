@@ -3,9 +3,9 @@
  *
  * O Google troca o modelo por trás de "gemini-flash-latest" sem aviso, e cada família aceita
  * ajustes diferentes. Os da família 3.x recusam (400) parte do que a 2.x aceitava:
- *  - "raciocínio": 2.x desliga com thinkingBudget 0; 3.x não desliga, só reduz
- *    (thinkingLevel "minimal" e, nos que não aceitam minimal, "low"); sem ajuste nenhum o
- *    modelo pensa no máximo e fica lento (pode estourar o tempo).
+ *  - "raciocínio": 3.x não desliga, só reduz (thinkingLevel "minimal" e, nos que não aceitam
+ *    minimal, "low"); 2.x não conhece thinkingLevel e desliga com thinkingBudget 0. Sem
+ *    ajuste nenhum o modelo pensa no máximo e fica lento (pode estourar o tempo).
  *  - formato da resposta: responseSchema (OpenAPI, o original) virou legado; o atual é
  *    responseJsonSchema (JSON Schema). Em último caso, só "application/json" com o formato
  *    descrito no texto (a validação da resposta, em zod, é tolerante).
@@ -13,9 +13,11 @@
  */
 
 export const AJUSTES_DE_PENSAMENTO: ReadonlyArray<Record<string, unknown>> = [
-  { thinkingConfig: { thinkingBudget: 0 } },
+  // os "-latest" já são 3.x: o jeito deles vem primeiro (a 3.x "aceita" thinkingBudget 0 em
+  // alguns modelos, mas o gemini-flash-latest seguiu lento com ele: passou de 25 s)
   { thinkingConfig: { thinkingLevel: 'minimal' } },
   { thinkingConfig: { thinkingLevel: 'low' } },
+  { thinkingConfig: { thinkingBudget: 0 } },
   {},
 ];
 

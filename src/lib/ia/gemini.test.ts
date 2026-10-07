@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { esquecerFormasAceitas, gerarJsonDeImagem, modelosGemini } from './gemini';
+import { ESPERA_ANTES_DO_RESERVA_MS, esquecerFormasAceitas, gerarJsonDeImagem, modelosGemini } from './gemini';
 import { paraJsonSchema, proximaForma } from './gemini-formas';
 
 const ok = (json: unknown) =>
@@ -39,26 +39,36 @@ describe('chamada ao Gemini', () => {
     expect(modelosGemini()).toEqual(['gemini-flash-latest', 'gemini-flash-lite-latest']);
   });
 
-  it('pede sem "raciocínio", com o schema, e devolve o JSON', async () => {
+  it('pede o mínimo de "raciocínio", com o schema, e devolve o JSON', async () => {
     const f = vi.fn().mockResolvedValue(ok({ litros: 40.35 }));
     vi.stubGlobal('fetch', f);
     await expect(chamar()).resolves.toMatchObject({ modelo: 'flash', json: { litros: 40.35 } });
-    expect(pedidos(f)).toMatchObject([{ modelo: 'flash', pensar: { thinkingBudget: 0 }, formato: 'responseSchema' }]);
+    expect(pedidos(f)).toMatchObject([{ modelo: 'flash', pensar: { thinkingLevel: 'minimal' }, formato: 'responseSchema' }]);
   });
 
-  it('modelo 3.x que recusa thinkingBudget 0 e "minimal": usa "low" e lembra disso', async () => {
+  it('modelo 3.x que recusa "minimal": usa "low" e lembra disso', async () => {
     const f = vi
       .fn()
-      .mockResolvedValueOnce(erro(400, 'Request contains an invalid argument.'))
       .mockResolvedValueOnce(erro(400, 'Thinking level MINIMAL is not supported for this model. Please retry with other thinking level.'))
       .mockResolvedValueOnce(ok({ litros: 1 }));
     vi.stubGlobal('fetch', f);
     await expect(chamar()).resolves.toMatchObject({ modelo: 'flash' });
-    expect(pedidos(f).map((p) => p.pensar)).toEqual([{ thinkingBudget: 0 }, { thinkingLevel: 'minimal' }, { thinkingLevel: 'low' }]);
+    expect(pedidos(f).map((p) => p.pensar)).toEqual([{ thinkingLevel: 'minimal' }, { thinkingLevel: 'low' }]);
     // a próxima leitura já vai direto na forma aceita
     f.mockResolvedValueOnce(ok({ litros: 2 }));
     await chamar();
     expect(pedidos(f).at(-1)).toMatchObject({ modelo: 'flash', pensar: { thinkingLevel: 'low' }, formato: 'responseSchema' });
+  });
+
+  it('modelo 2.x (não conhece thinkingLevel): chega ao thinkingBudget 0', async () => {
+    const f = vi
+      .fn()
+      .mockResolvedValueOnce(erro(400, 'Invalid JSON payload received. Unknown name "thinkingLevel" at \'generation_config.thinking_config\'.'))
+      .mockResolvedValueOnce(erro(400, 'Invalid JSON payload received. Unknown name "thinkingLevel" at \'generation_config.thinking_config\'.'))
+      .mockResolvedValueOnce(ok({ litros: 1 }));
+    vi.stubGlobal('fetch', f);
+    await chamar();
+    expect(pedidos(f).map((p) => p.pensar)).toEqual([{ thinkingLevel: 'minimal' }, { thinkingLevel: 'low' }, { thinkingBudget: 0 }]);
   });
 
   it('schema recusado: passa para responseJsonSchema sem mexer no raciocínio', async () => {
@@ -69,8 +79,8 @@ describe('chamada ao Gemini', () => {
     vi.stubGlobal('fetch', f);
     await chamar();
     expect(pedidos(f).map(({ pensar, formato }) => ({ pensar, formato }))).toEqual([
-      { pensar: { thinkingBudget: 0 }, formato: 'responseSchema' },
-      { pensar: { thinkingBudget: 0 }, formato: 'responseJsonSchema' },
+      { pensar: { thinkingLevel: 'minimal' }, formato: 'responseSchema' },
+      { pensar: { thinkingLevel: 'minimal' }, formato: 'responseJsonSchema' },
     ]);
   });
 
@@ -87,6 +97,34 @@ describe('chamada ao Gemini', () => {
     const f = vi.fn().mockResolvedValueOnce(erro(429, 'quota')).mockResolvedValueOnce(ok({ litros: 3 }));
     vi.stubGlobal('fetch', f);
     await expect(chamar()).resolves.toMatchObject({ modelo: 'lite' });
+  });
+
+  it('modelo lento: o próximo começa em paralelo e vale a primeira resposta', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      let cancelado = false;
+      const f = vi.fn().mockImplementation((url: string, init: RequestInit) => {
+        if (url.includes('/models/flash:')) {
+          // não responde; só termina quando a leitura é cancelada
+          return new Promise((_, rejeitar) =>
+            init.signal!.addEventListener('abort', () => {
+              cancelado = true;
+              rejeitar(new DOMException('abortado', 'AbortError'));
+            }),
+          );
+        }
+        return Promise.resolve(ok({ litros: 4 }));
+      });
+      vi.stubGlobal('fetch', f);
+      const leitura = chamar();
+      await vi.advanceTimersByTimeAsync(ESPERA_ANTES_DO_RESERVA_MS - 1);
+      expect(f).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(leitura).resolves.toMatchObject({ modelo: 'lite', json: { litros: 4 } });
+      expect(cancelado).toBe(true); // o lento é cancelado
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('recusado em todas as formas e modelos: erro "recusado" com o motivo do Google', async () => {
