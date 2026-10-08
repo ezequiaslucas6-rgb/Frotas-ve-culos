@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- atualização do próprio APK pelo app (pergunta antes; o Android confirma a instalação) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Android 12+: atualiza sem perguntar quando o próprio Rodar instalou a versão atual -->
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
     <!-- lembretes do checklist (08:00 e 08:30): notificação e reagendar depois de reiniciar o celular -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -47,6 +49,18 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
                 <action android:name="android.intent.action.TIME_SET" />
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- atualização do app por dentro: resultado da instalação e o aviso "Rodar atualizado" -->
+        <receiver
+            android:name=".ResultadoAtualizacao"
+            android:exported="false" />
+        <receiver
+            android:name=".AppAtualizado"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 

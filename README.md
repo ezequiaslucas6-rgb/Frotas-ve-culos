@@ -72,9 +72,12 @@ Depois da primeira instalação, ninguém precisa atualizar nada à mão:
 2. **Celulares e navegadores:** o app confere a versão do servidor ao voltar para a tela, ao recuperar a internet e a
    cada 10 minutos; se mudou, **recarrega sozinho**. Em tela de formulário (lançamento, checklist, cadastro) ele só
    mostra *"Nova versão do Rodar"* e atualiza ao sair dela, sem perder o que foi digitado.
-3. **APK:** só muda quando a parte Android muda (raro). O próprio app confere a versão publicada no GitHub (a cada 6 h)
-   e oferece **Atualizar**: baixa, confere o arquivo e abre o instalador do Android, que instala por cima. Na primeira
-   vez o Android pede para permitir que o Rodar instale atualizações.
+3. **APK:** só muda quando a parte Android muda (raro). Ao abrir o app (e ao voltar para ele), o Rodar confere a versão
+   publicada no GitHub e oferece **Atualizar**: baixa **dentro do app** (barra de progresso), confere o arquivo
+   (SHA-256) e instala pela sessão de instalação do Android, sem navegador nem arquivo para abrir. No Android 12 ou mais
+   novo, depois que o próprio Rodar instalou uma versão, as seguintes **instalam sem nenhuma pergunta** e o aviso
+   *Rodar atualizado* reabre o app; antes disso o Android mostra só *Atualizar este app?*. Na primeira vez o Android
+   pede para permitir que o Rodar instale atualizações. *Depois* adia a pergunta por 4 horas.
 
 | Variável (`.env`) | Uso |
 |---|---|

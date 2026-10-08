@@ -11,6 +11,9 @@
     <string name="atualizacao_atualizar">Atualizar</string>
     <string name="atualizacao_depois">Depois</string>
     <string name="atualizacao_baixando">Baixando a atualização do Rodar…</string>
+    <string name="atualizacao_instalando">Instalando a atualização…</string>
+    <string name="atualizacao_concluida_titulo">Rodar atualizado</string>
+    <string name="atualizacao_concluida_texto">Versão %1$s instalada. Toque para abrir o app.</string>
     <string name="atualizacao_falhou">Não foi possível atualizar agora. Tente mais tarde.</string>
     <string name="atualizacao_permissao">Permita que o Rodar instale a atualização e volte ao app.</string>
     <string name="lembretes_canal">Lembretes do checklist</string>
