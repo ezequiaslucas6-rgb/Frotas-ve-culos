@@ -305,7 +305,12 @@ validado na própria VPS, sem essa ida. O `deploy/diagnostico.sh` mostra qual é
 Em todos os tipos: **"O veículo tem algum vazamento ou avaria?" Sim/Não** — no "Sim" a foto (com Atenção/Avaria e
 descrição) passa a ser obrigatória. O Administrador Geral ajusta o que cada tipo exige em **Checklists → Modelos**.
 
-Só câmera: não existe opção de galeria (no APK o campo abre a câmera direto) e fotos antigas são recusadas.
+Só câmera: não existe opção de galeria e fotos antigas são recusadas. A câmera abre **dentro da própria tela** (o app
+não sai para o app de câmera do celular): em aparelhos com pouca memória, como o Redmi 14C, o Android encerrava o app ou
+o Chrome enquanto a câmera do celular estava aberta e a foto se perdia na volta. A foto sai em até 1920 px (o envio
+reduz para 1600 px), com botão de lanterna quando o aparelho oferece. Se a câmera na tela não abrir (permissão negada
+ou APK antigo), o botão *Usar o app de câmera* abre a câmera do celular como antes. No APK, a permissão de câmera é
+pedida na primeira foto.
 **Compressão no aparelho** (fotos de 3–12 MB viram ~300 KB), upload direto ao Storage item a item com novas tentativas,
 **pins de avaria tocando na foto**, status geral em tempo real e rascunho que sobrevive ao recarregar a página. O envio
 final é uma RPC atômica (`salvar_checklist`) que confere as fotos com o modelo do tipo e grava checklist + fotos + KM

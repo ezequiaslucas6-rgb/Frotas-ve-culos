@@ -10,10 +10,13 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!--
-      Sem a permissão CAMERA de propósito: as fotos usam o app de câmera do próprio celular
-      (ACTION_IMAGE_CAPTURE), que dispensa a permissão. allowBackup=false: a sessão de login
-      não vai para backups.
+      CAMERA: fotos do checklist tiradas dentro da página (o app não sai da tela; em celulares com
+      pouca memória o Android encerrava o app enquanto o app de câmera estava aberto e a foto se
+      perdia). Pedida na primeira foto. allowBackup=false: a sessão de login não vai para backups.
     -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"

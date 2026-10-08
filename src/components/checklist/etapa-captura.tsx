@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/input';
 import { SEVERIDADE_LABEL, type MarcadorAvaria, type Severidade } from '@/lib/checklist/etapas';
 import { cn } from '@/lib/utils';
+import { CameraNaTela, cameraNaTelaDisponivel } from './camera-na-tela';
 import type { EtapaState } from './types';
 
 interface EtapaCapturaProps {
@@ -29,15 +30,22 @@ const SEVERIDADES: Array<{ value: Severidade; icon: typeof CircleCheck; classes:
 
 /**
  * Captura de uma foto do checklist. Só câmera: não há opção de galeria (e o assistente
- * ainda recusa arquivos antigos). No APK, o campo com `capture` abre a câmera direto.
+ * ainda recusa arquivos antigos). A câmera abre dentro da página (CameraNaTela); onde ela não
+ * abre, o campo com `capture` usa o app de câmera do celular.
  */
 export function EtapaCaptura({ titulo, estado, somenteProblema = false, onFile, onRetry, onChange, children }: EtapaCapturaProps) {
   const cameraRef = useRef<HTMLInputElement>(null);
   const [marcando, setMarcando] = useState(false);
+  const [cameraAberta, setCameraAberta] = useState(false);
   const opcoes = somenteProblema ? SEVERIDADES.filter((s) => s.value !== 'ok') : SEVERIDADES;
 
   const ocupado = estado.fase === 'processando' || estado.fase === 'enviando';
   const temFoto = Boolean(estado.previewUrl);
+
+  function abrirCamera() {
+    if (cameraNaTelaDisponivel()) setCameraAberta(true);
+    else cameraRef.current?.click();
+  }
 
   function pick(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -63,6 +71,20 @@ export function EtapaCaptura({ titulo, estado, somenteProblema = false, onFile, 
     <div className="flex flex-col gap-4">
       {/* input oculto: só a câmera traseira (capture), sem galeria */}
       <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="sr-only" tabIndex={-1} onChange={pick} data-testid="camera" />
+      {cameraAberta ? (
+        <CameraNaTela
+          titulo={titulo}
+          onFechar={() => setCameraAberta(false)}
+          onFoto={(file) => {
+            setCameraAberta(false);
+            onFile(file);
+          }}
+          onUsarAppDeCamera={() => {
+            setCameraAberta(false);
+            cameraRef.current?.click();
+          }}
+        />
+      ) : null}
 
       {!temFoto ? (
         <div className="flex flex-col items-center gap-4 rounded-2xl border-2 border-dashed border-border bg-card px-4 py-10 text-center">
@@ -76,7 +98,7 @@ export function EtapaCaptura({ titulo, estado, somenteProblema = false, onFile, 
           ) : (
             <>
               <Camera className="size-12 text-muted-foreground" />
-              <Button type="button" size="xl" className="w-full max-w-xs" onClick={() => cameraRef.current?.click()}>
+              <Button type="button" size="xl" className="w-full max-w-xs" onClick={abrirCamera}>
                 <Camera className="size-5" /> Tirar foto
               </Button>
               <p className="text-xs text-muted-foreground">Abre a câmera. Fotos da galeria não são aceitas.</p>
@@ -145,7 +167,7 @@ export function EtapaCaptura({ titulo, estado, somenteProblema = false, onFile, 
                 <RotateCcw /> Reenviar
               </Button>
             ) : (
-              <Button type="button" variant="outline" size="lg" disabled={ocupado} onClick={() => cameraRef.current?.click()}>
+              <Button type="button" variant="outline" size="lg" disabled={ocupado} onClick={abrirCamera}>
                 <RefreshCw /> Refazer foto
               </Button>
             )}

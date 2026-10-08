@@ -4,6 +4,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
@@ -11,6 +12,7 @@ import android.os.Bundle
 import android.provider.MediaStore
 import android.view.View
 import android.webkit.CookieManager
+import android.webkit.PermissionRequest
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -25,6 +27,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -77,6 +80,27 @@ class MainActivity : ComponentActivity() {
             // sempre responder (null = cancelado); senão o WebView não abre o seletor de novo
             callback.onReceiveValue(arquivos)
         }
+
+    /** quem espera a resposta da permissão de câmera (a página ou o seletor de arquivo) */
+    private var depoisDaPermissaoDeCamera: ((Boolean) -> Unit)? = null
+
+    private val permissaoDeCamera =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { concedida ->
+            val acao = depoisDaPermissaoDeCamera
+            depoisDaPermissaoDeCamera = null
+            acao?.invoke(concedida)
+        }
+
+    private fun temPermissaoDeCamera() =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+
+    /** Roda `acao` com a permissão de câmera (pede ao Android se ainda não foi dada). */
+    private fun comPermissaoDeCamera(acao: (Boolean) -> Unit) {
+        if (temPermissaoDeCamera()) return acao(true)
+        depoisDaPermissaoDeCamera?.invoke(false) // pedido anterior sem resposta: encerra
+        depoisDaPermissaoDeCamera = acao
+        permissaoDeCamera.launch(Manifest.permission.CAMERA)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -246,6 +270,22 @@ class MainActivity : ComponentActivity() {
                 filePathCallback: ValueCallback<Array<Uri>>,
                 fileChooserParams: FileChooserParams,
             ): Boolean = abrirSeletorDeArquivo(filePathCallback, fileChooserParams)
+
+            /**
+             * Câmera dentro da página (fotos do checklist): o app não sai da tela enquanto a pessoa
+             * fotografa. Com o app de câmera do celular, aparelhos com pouca memória (ex.: Redmi 14C)
+             * encerravam o app nesse meio tempo e a foto se perdia. Só para o próprio sistema.
+             */
+            override fun onPermissionRequest(request: PermissionRequest) {
+                val doSistema = request.origin?.host == hostDoSistema
+                if (!doSistema || PermissionRequest.RESOURCE_VIDEO_CAPTURE !in request.resources) {
+                    request.deny()
+                    return
+                }
+                comPermissaoDeCamera { concedida ->
+                    if (concedida) request.grant(arrayOf(PermissionRequest.RESOURCE_VIDEO_CAPTURE)) else request.deny()
+                }
+            }
         }
 
         // PDFs e demais downloads: o WebView não exibe, então abre no app do celular
@@ -262,14 +302,27 @@ class MainActivity : ComponentActivity() {
     ): Boolean {
         aguardandoArquivo?.onReceiveValue(null)
         aguardandoArquivo = callback
+        // o app declara a permissão CAMERA (câmera na página): o Android passa a exigi-la também
+        // para abrir o app de câmera do celular. Sem ela, oferece só os arquivos.
+        val aceitaImagem = tiposAceitos(params).let { t -> t.isEmpty() || t.any { it.startsWith("image/") || it == "*/*" } }
+        if (aceitaImagem) {
+            comPermissaoDeCamera { podeCamera -> lancarSeletorDeArquivo(callback, params, podeCamera) }
+        } else {
+            lancarSeletorDeArquivo(callback, params, podeCamera = false)
+        }
+        return true
+    }
 
-        val tipos = params.acceptTypes
-            .flatMap { it.split(',') }
-            .map { it.trim().lowercase() }
-            .filter { it.isNotEmpty() }
+    private fun lancarSeletorDeArquivo(
+        callback: ValueCallback<Array<Uri>>,
+        params: WebChromeClient.FileChooserParams,
+        podeCamera: Boolean,
+    ) {
+        if (aguardandoArquivo !== callback) return // outro seletor já foi aberto
+        val tipos = tiposAceitos(params)
         val aceitaImagem = tipos.isEmpty() || tipos.any { it.startsWith("image/") || it == "*/*" }
         val soImagem = tipos.isNotEmpty() && tipos.all { it.startsWith("image/") }
-        val camera = if (aceitaImagem) intentDaCamera() else null
+        val camera = if (aceitaImagem && podeCamera) intentDaCamera() else null
 
         val intent = if (params.isCaptureEnabled && soImagem && camera != null) {
             camera
@@ -287,19 +340,23 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        return try {
+        try {
             seletorDeArquivo.launch(intent)
-            true
         } catch (e: ActivityNotFoundException) {
             aguardandoArquivo = null
             fotoDaCamera = null
             callback.onReceiveValue(null)
             Toast.makeText(this, R.string.sem_app, Toast.LENGTH_SHORT).show()
-            true
         }
     }
 
-    /** Câmera do próprio celular gravando num arquivo do app (sem precisar da permissão CAMERA). */
+    private fun tiposAceitos(params: WebChromeClient.FileChooserParams): List<String> =
+        params.acceptTypes
+            .flatMap { it.split(',') }
+            .map { it.trim().lowercase() }
+            .filter { it.isNotEmpty() }
+
+    /** Câmera do próprio celular gravando num arquivo do app. */
     private fun intentDaCamera(): Intent? {
         return try {
             val pasta = File(cacheDir, "camera").apply { mkdirs() }
