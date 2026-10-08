@@ -310,7 +310,8 @@ não sai para o app de câmera do celular): em aparelhos com pouca memória, com
 o Chrome enquanto a câmera do celular estava aberta e a foto se perdia na volta. A foto sai em até 1920 px (o envio
 reduz para 1600 px), com botão de lanterna quando o aparelho oferece. Se a câmera na tela não abrir (permissão negada
 ou APK antigo), o botão *Usar o app de câmera* abre a câmera do celular como antes. No APK, a permissão de câmera é
-pedida na primeira foto.
+pedida na primeira foto (APK 1.0.10 ou mais novo; no antigo, a tela avisa e oferece o download do app atualizado). Se a
+pessoa tiver negado de vez, o app abre as configurações dele para liberar a câmera.
 **Compressão no aparelho** (fotos de 3–12 MB viram ~300 KB), upload direto ao Storage item a item com novas tentativas,
 **pins de avaria tocando na foto**, status geral em tempo real e rascunho que sobrevive ao recarregar a página. O envio
 final é uma RPC atômica (`salvar_checklist`) que confere as fotos com o modelo do tipo e grava checklist + fotos + KM

@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
+import android.provider.Settings
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.PermissionRequest
@@ -84,10 +85,24 @@ class MainActivity : ComponentActivity() {
     /** quem espera a resposta da permissão de câmera (a página ou o seletor de arquivo) */
     private var depoisDaPermissaoDeCamera: ((Boolean) -> Unit)? = null
 
+    private var cameraPedidaEm = 0L
+
     private val permissaoDeCamera =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { concedida ->
             val acao = depoisDaPermissaoDeCamera
             depoisDaPermissaoDeCamera = null
+            // negada na hora, sem a pergunta aparecer: a pessoa negou antes ("não perguntar de novo")
+            // e o Android não pergunta mais. Abre as configurações do app para liberar a câmera.
+            if (!concedida && System.currentTimeMillis() - cameraPedidaEm < 500 &&
+                !shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)
+            ) {
+                Toast.makeText(this, R.string.liberar_camera, Toast.LENGTH_LONG).show()
+                try {
+                    startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
+                } catch (e: ActivityNotFoundException) {
+                    // sem a tela de configurações: fica o aviso
+                }
+            }
             acao?.invoke(concedida)
         }
 
@@ -99,6 +114,7 @@ class MainActivity : ComponentActivity() {
         if (temPermissaoDeCamera()) return acao(true)
         depoisDaPermissaoDeCamera?.invoke(false) // pedido anterior sem resposta: encerra
         depoisDaPermissaoDeCamera = acao
+        cameraPedidaEm = System.currentTimeMillis()
         permissaoDeCamera.launch(Manifest.permission.CAMERA)
     }
 

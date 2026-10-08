@@ -19,4 +19,5 @@
     <string name="lembrete_offline_texto">Faça o checklist do veículo antes de sair (o diário até as 08:30; no sábado e no domingo, o semanal).</string>
     <string name="lembrete_sem_login_titulo">Entre no app para receber os lembretes</string>
     <string name="lembrete_sem_login_texto">A sessão deste celular foi encerrada. Abra o app e entre com seu e-mail e senha para continuar recebendo o lembrete do checklist.</string>
+    <string name="liberar_camera">Libere a câmera para o app: Permissões → Câmera → Permitir.</string>
 </resources>

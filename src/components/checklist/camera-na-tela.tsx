@@ -2,16 +2,34 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Camera, Flashlight, FlashlightOff, Loader2, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Camera, Download, Flashlight, FlashlightOff, Loader2, X } from 'lucide-react';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 /** Maior lado da foto tirada aqui (o checklist ainda reduz para 1600 px). */
 const MAIOR_LADO = 1920;
 
+/** Primeira versão do APK que libera a câmera para a página (permissão CAMERA + onPermissionRequest). */
+const APK_COM_CAMERA = 10;
+/** Link fixo do APK mais recente (Releases → App Android). */
+export const LINK_APK = 'https://github.com/ezequiaslucas6-rgb/Frotas-ve-culos/releases/download/app-android/frotas.apk';
+
+/** Versão do APK ("FrotasApp/1.0.10" no user agent): o número final; null fora do APK. */
+function versaoDoApk(): number | null {
+  const m = typeof navigator === 'undefined' ? null : /FrotasApp\/\d+\.\d+\.(\d+)/.exec(navigator.userAgent);
+  return m ? Number(m[1]) : null;
+}
+
+/** APK antigo: a câmera na tela é sempre recusada (o app não tem a permissão). */
+export const apkSemCameraNaTela = () => {
+  const v = versaoDoApk();
+  return v != null && v < APK_COM_CAMERA;
+};
+
 /** A câmera dentro da página existe neste navegador? */
 export const cameraNaTelaDisponivel = () => typeof navigator !== 'undefined' && typeof navigator.mediaDevices?.getUserMedia === 'function';
 
-type Estado = { fase: 'abrindo' } | { fase: 'pronta' } | { fase: 'tirando' } | { fase: 'erro'; mensagem: string };
+type Estado = { fase: 'abrindo' } | { fase: 'pronta' } | { fase: 'tirando' } | { fase: 'erro'; mensagem: string; atualizarApp?: boolean };
 
 /**
  * Câmera dentro da própria página (getUserMedia), sem sair do app.
@@ -37,10 +55,15 @@ export function CameraNaTela({
 }) {
   const video = useRef<HTMLVideoElement>(null);
   const fluxo = useRef<MediaStream | null>(null);
-  const [estado, setEstado] = useState<Estado>({ fase: 'abrindo' });
+  const [estado, setEstado] = useState<Estado>(() =>
+    apkSemCameraNaTela()
+      ? { fase: 'erro', atualizarApp: true, mensagem: 'Esta versão do app não tem a câmera na tela. Atualize o app para tirar as fotos sem sair dele.' }
+      : { fase: 'abrindo' },
+  );
   const [lanterna, setLanterna] = useState<boolean | null>(null); // null = o aparelho não oferece
 
   useEffect(() => {
+    if (apkSemCameraNaTela()) return;
     let cancelado = false;
     navigator.mediaDevices
       .getUserMedia({
@@ -67,8 +90,10 @@ export function CameraNaTela({
           fase: 'erro',
           mensagem:
             nome === 'NotAllowedError' || nome === 'SecurityError'
-              ? 'A câmera não foi liberada para o app. Permita o uso da câmera ou use o app de câmera do celular.'
-              : 'Não foi possível abrir a câmera aqui. Use o app de câmera do celular.',
+              ? versaoDoApk() != null
+                ? 'A câmera não foi liberada. Libere em Configurações → Apps → Rodar → Permissões → Câmera, ou use o app de câmera do celular.'
+                : 'A câmera não foi liberada para o site. Toque no cadeado ao lado do endereço e permita a câmera, ou use o app de câmera do celular.'
+              : `Não foi possível abrir a câmera aqui${nome ? ` (${nome})` : ''}. Use o app de câmera do celular.`,
         });
       });
     // celular volta da tela de bloqueio etc.: o vídeo continua; ao fechar, a câmera é desligada
@@ -131,12 +156,24 @@ export function CameraNaTela({
       </div>
 
       <div className="relative flex min-h-0 flex-1 items-center justify-center">
-        <video ref={video} playsInline muted autoPlay className="max-h-full max-w-full object-contain" />
+        {/* escondido até a câmera abrir (o WebView mostra um "play" cinza no vídeo vazio) */}
+        <video
+          ref={video}
+          playsInline
+          muted
+          autoPlay
+          className={cn('max-h-full max-w-full object-contain', estado.fase !== 'pronta' && estado.fase !== 'tirando' && 'invisible')}
+        />
         {estado.fase === 'abrindo' ? <Loader2 className="absolute size-10 animate-spin" aria-label="Abrindo a câmera" /> : null}
         {estado.fase === 'erro' ? (
           <div role="alert" className="absolute inset-x-4 flex flex-col items-center gap-4 text-center">
             <p className="text-sm">{estado.mensagem}</p>
-            <Button type="button" size="lg" onClick={onUsarAppDeCamera}>
+            {estado.atualizarApp ? (
+              <a href={LINK_APK} className={buttonVariants({ size: 'lg' })}>
+                <Download /> Baixar o app atualizado
+              </a>
+            ) : null}
+            <Button type="button" size="lg" variant={estado.atualizarApp ? 'outline' : 'default'} className={estado.atualizarApp ? 'text-foreground' : undefined} onClick={onUsarAppDeCamera}>
               <Camera /> Usar o app de câmera
             </Button>
           </div>
