@@ -40,7 +40,10 @@ fi
 
 # uma atualização por vez (a automática, deploy/auto-atualizar.sh, usa a mesma trava e avisa com FROTAS_TRAVA)
 if [[ -z ${FROTAS_TRAVA:-} ]]; then
-  exec 9>/tmp/frotas-atualizacao.lock
+  # aberta só para leitura: a trava criada pela automática (root) não pode ser aberta para escrita
+  # por outro usuário em /tmp (fs.protected_regular), mas o flock funciona do mesmo jeito
+  [[ -e /tmp/frotas-atualizacao.lock ]] || (umask 000 && : >/tmp/frotas-atualizacao.lock) 2>/dev/null || true
+  exec 9</tmp/frotas-atualizacao.lock
   flock -n 9 || falha "Já há uma atualização em andamento (a automática). Aguarde alguns minutos e rode de novo."
 fi
 
