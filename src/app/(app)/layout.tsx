@@ -1,4 +1,5 @@
 import { AppShell } from '@/components/layout/app-shell';
+import { AvisoNotificacoes } from '@/components/notificacoes/aviso-notificacoes';
 import { RegistrarServiceWorker } from '@/components/offline/registrar-sw';
 import { PAPEL_LABEL, requireSession } from '@/lib/auth';
 import { formatFilial } from '@/lib/format';
@@ -17,6 +18,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       avatarUrl={profile.avatar_url ? (avatar[profile.avatar_url] ?? null) : null}
     >
       <RegistrarServiceWorker />
+      <AvisoNotificacoes />
       {children}
     </AppShell>
   );

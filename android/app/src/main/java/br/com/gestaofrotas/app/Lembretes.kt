@@ -34,6 +34,10 @@ import kotlin.concurrent.thread
  * Na hora, o app pergunta ao sistema (/api/lembretes, com a sessão do próprio app) o que
  * avisar: quem já fez o checklist não é incomodado. Sem internet às 08:00, o motorista
  * recebe um lembrete simples.
+ *
+ * O aviso principal é o PUSH do servidor ([FcmService]), que chega no minuto exato. Com o push
+ * registrado, este alarme vira REDE DE SEGURANÇA: dispara 3 minutos depois e só avisa se o push
+ * não chegou. Sem push (build sem Firebase), o alarme dispara na hora exata.
  */
 object Lembretes {
     const val CANAL = "lembretes"
@@ -46,11 +50,20 @@ object Lembretes {
     fun agendar(context: Context) {
         val alarmes = context.getSystemService(AlarmManager::class.java) ?: return
         val agora = ZonedDateTime.now(FUSO)
+        val atraso = if (PushRegistro.ativo(context)) PushRegistro.ATRASO_REDE_DE_SEGURANCA_MIN else 0L
         for ((momento, horario) in HORARIOS) {
-            var quando = agora.withHour(horario.first).withMinute(horario.second).withSecond(0).withNano(0)
+            var quando = agora.withHour(horario.first).withMinute(horario.second).withSecond(0).withNano(0).plusMinutes(atraso)
             if (!quando.isAfter(agora)) quando = quando.plusDays(1)
-            // inexato (o Android junta alarmes para poupar bateria): chega em poucos minutos
-            alarmes.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, quando.toInstant().toEpochMilli(), pendente(context, momento))
+            val ms = quando.toInstant().toEpochMilli()
+            val intencao = pendente(context, momento)
+            // exato: o inexato era adiado pelo Android (modo de economia) e chegava minutos depois
+            val exato = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmes.canScheduleExactAlarms()
+            try {
+                if (exato) alarmes.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, ms, intencao)
+                else alarmes.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, ms, intencao)
+            } catch (e: SecurityException) {
+                alarmes.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, ms, intencao)
+            }
         }
     }
 
@@ -139,7 +152,7 @@ object Lembretes {
      * processo logo depois do alarme), o app voltaria com o antigo e o Supabase encerraria a
      * sessão por reuso, e o motorista teria de entrar de novo.
      */
-    private fun guardarCookies(url: String, cookies: List<String>) {
+    fun guardarCookies(url: String, cookies: List<String>) {
         val gravado = CountDownLatch(1)
         Handler(Looper.getMainLooper()).post {
             try {
@@ -162,6 +175,8 @@ class LembreteReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         Lembretes.agendar(context) // o próximo (amanhã), e também após reiniciar/atualizar
         val momento = intent.getStringExtra(Lembretes.EXTRA_MOMENTO) ?: return
+        // com o push registrado este alarme é a reserva: se o push chegou, não avisa de novo
+        if (PushRegistro.ativo(context) && PushRegistro.recebeuHaPouco(context)) return
         val prefs = context.getSharedPreferences("lembretes", Context.MODE_PRIVATE)
         val cookies = runCatching { CookieManager.getInstance().getCookie(BuildConfig.APP_URL) }.getOrNull()
         val pendente = goAsync()

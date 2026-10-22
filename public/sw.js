@@ -138,3 +138,47 @@ self.addEventListener('message', (evento) => {
   // saiu da conta: a tela guardada era de outra pessoa
   if (dados.tipo === 'limpar-paginas') evento.waitUntil(enfileirar(() => caches.delete(PAGINAS)));
 });
+
+/* ------------------------------------------------------------------------------------------
+   Notificações: o servidor envia o push no minuto exato (08:00 e 08:30, Pimenta Bueno) e ele
+   chega aqui na hora, mesmo com o site fechado. Nada é guardado: só mostra a notificação.
+------------------------------------------------------------------------------------------- */
+self.addEventListener('push', (evento) => {
+  let dados = {};
+  try {
+    dados = evento.data ? evento.data.json() : {};
+  } catch {
+    dados = { texto: evento.data ? evento.data.text() : '' };
+  }
+  evento.waitUntil(
+    self.registration.showNotification(dados.titulo || 'Rodar', {
+      body: dados.texto || '',
+      // a notificação do mesmo assunto substitui a anterior (e avisa de novo)
+      tag: dados.id || 'rodar',
+      renotify: true,
+      // fica na tela até a pessoa ver (no PC some sozinha em segundos)
+      requireInteraction: true,
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      data: { url: dados.url || '/' },
+    }),
+  );
+});
+
+self.addEventListener('notificationclick', (evento) => {
+  evento.notification.close();
+  const url = new URL(evento.notification.data?.url || '/', self.location.origin);
+  // só abre telas do próprio sistema
+  const destino = url.origin === self.location.origin ? url.href : self.location.origin;
+  evento.waitUntil(
+    (async () => {
+      const abertas = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      for (const janela of abertas) {
+        if (new URL(janela.url).origin !== self.location.origin) continue;
+        if ('navigate' in janela) await janela.navigate(destino).catch(() => undefined);
+        return janela.focus();
+      }
+      return self.clients.openWindow(destino);
+    })(),
+  );
+});

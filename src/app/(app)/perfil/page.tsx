@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Building2, KeyRound, Mail, ShieldCheck, UserRound } from 'lucide-react';
 import { CnhCard } from '@/components/motoristas/cnh-card';
+import { CartaoNotificacoes } from '@/components/notificacoes/cartao-notificacoes';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -75,6 +76,8 @@ export default async function PerfilPage() {
           </CardContent>
         </Card>
       </div>
+
+      <CartaoNotificacoes papel={profile.role} />
 
       {cadastro ? (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">

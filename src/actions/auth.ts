@@ -1,9 +1,11 @@
 'use server';
 
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { fail, type ActionState } from '@/lib/action-state';
 import { getSession, homeDoPapel } from '@/lib/auth';
+import { COOKIE_APARELHO, removerDispositivoPorId } from '@/lib/push/dispositivos';
 import { formDataToObject } from '@/lib/schemas';
 import { createClient } from '@/lib/supabase/server';
 
@@ -40,6 +42,12 @@ export async function signIn(_prev: ActionState, formData: FormData): Promise<Ac
 }
 
 export async function signOut() {
+  // este aparelho deixa de receber os avisos de quem saiu (o próximo login o registra de novo)
+  const session = await getSession();
+  const jar = await cookies();
+  const aparelho = jar.get(COOKIE_APARELHO)?.value;
+  if (session && aparelho && /^[0-9a-f-]{36}$/i.test(aparelho)) await removerDispositivoPorId(session.user.id, aparelho).catch(() => undefined);
+  jar.delete(COOKIE_APARELHO);
   const supabase = await createClient();
   await supabase.auth.signOut();
   redirect('/login');

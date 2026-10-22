@@ -1,6 +1,7 @@
 package br.com.gestaofrotas.app
 
 import android.Manifest
+import android.app.AlertDialog
 import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -9,6 +10,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.MediaStore
 import android.provider.Settings
 import android.view.View
@@ -192,6 +194,33 @@ class MainActivity : ComponentActivity() {
         pausadoEm = 0
         atualizador.aoRetomar()
         atualizador.verificar()
+        pedirParaNaoEconomizarBateria()
+    }
+
+    /**
+     * Celulares como Xiaomi/Redmi encerram apps em segundo plano para poupar bateria e, com isso,
+     * atrasam ou perdem as notificações. Pede uma vez para o Rodar ficar fora dessa economia
+     * (só depois de permitir as notificações).
+     */
+    private fun pedirParaNaoEconomizarBateria() {
+        if (isFinishing || isDestroyed || !Lembretes.podeNotificar(this)) return
+        val energia = getSystemService(PowerManager::class.java) ?: return
+        if (energia.isIgnoringBatteryOptimizations(packageName)) return
+        val prefs = getSharedPreferences("lembretes", MODE_PRIVATE)
+        if (prefs.getBoolean("bateria_pedida", false)) return
+        prefs.edit().putBoolean("bateria_pedida", true).apply()
+        AlertDialog.Builder(this)
+            .setTitle(R.string.bateria_titulo)
+            .setMessage(R.string.bateria_texto)
+            .setPositiveButton(R.string.bateria_permitir) { _, _ ->
+                try {
+                    startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
+                } catch (e: ActivityNotFoundException) {
+                    runCatching { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+                }
+            }
+            .setNegativeButton(R.string.bateria_depois, null)
+            .show()
     }
 
     override fun onDestroy() {
@@ -259,6 +288,10 @@ class MainActivity : ComponentActivity() {
                 progresso.visibility = View.GONE
                 if (!falhouCarregar) erro.visibility = View.GONE
                 CookieManager.getInstance().flush()
+                // push do servidor: entrega o token deste aparelho com a sessão do app (fora da tela de login)
+                if (url?.contains("/login") != true) {
+                    PushRegistro.registrar(applicationContext, CookieManager.getInstance().getCookie(BuildConfig.APP_URL))
+                }
             }
 
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {

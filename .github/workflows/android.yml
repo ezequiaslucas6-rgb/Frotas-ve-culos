@@ -64,6 +64,20 @@ jobs:
             PASTA="$RUNNER_TEMP/chave-descartavel" bash ../deploy/gerar-chave-apk.sh --ci
           fi
 
+      # Notificações por push (Firebase, gratuito): com o google-services.json do projeto nos secrets
+      # (GOOGLE_SERVICES_JSON_BASE64), o APK recebe o aviso do servidor na hora. Sem ele, compila igual e
+      # usa só o alarme do celular. Passo a passo: README, "Notificações".
+      - name: Firebase (notificações por push)
+        env:
+          GOOGLE_SERVICES_B64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_B64" ]; then
+            echo "$GOOGLE_SERVICES_B64" | base64 -d > app/google-services.json
+            echo "::notice::Firebase configurado: o APK recebe notificações por push."
+          else
+            echo "::notice::Sem o secret GOOGLE_SERVICES_JSON_BASE64: o APK usa só o alarme do celular (menos pontual). Veja o README, Notificações."
+          fi
+
       - name: Compilar APK
         env:
           APP_URL: ${{ inputs.app_url || 'https://frotas.209.50.240.59.sslip.io/' }}

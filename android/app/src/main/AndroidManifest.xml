@@ -10,6 +10,11 @@
     <!-- lembretes do checklist (08:00 e 08:30): notificação e reagendar depois de reiniciar o celular -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- alarme no minuto exato (rede de segurança do push); Android 13+ concede USE_EXACT_ALARM sozinho -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+    <!-- pede para o app não ser limitado pela economia de bateria (celulares como Xiaomi/Redmi encerram apps em segundo plano) -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!--
       CAMERA: fotos do checklist tiradas dentro da página (o app não sai da tela; em celulares com
@@ -51,6 +56,15 @@
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
             </intent-filter>
         </receiver>
+
+        <!-- push do servidor (Firebase): chega na hora, com o app fechado -->
+        <service
+            android:name=".FcmService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
 
         <!-- atualização do app por dentro: resultado da instalação e o aviso "Rodar atualizado" -->
         <receiver

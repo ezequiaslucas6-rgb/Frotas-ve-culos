@@ -174,6 +174,19 @@ type VeiculoPainelRow = {
   liberacao_diaria_obs: string | null;
   motorista_dias_folga: number[] | null;
 };
+type PushDispositivoRow = {
+  id: string;
+  user_id: string;
+  tipo: 'web' | 'fcm';
+  destino: string;
+  chave_p256dh: string | null;
+  chave_auth: string | null;
+  user_agent: string | null;
+  criado_em: string;
+  atualizado_em: string;
+  ultimo_envio_em: string | null;
+};
+type PushDisparoRow = { momento: '0800' | '0830'; dia: string; iniciado_em: string; concluido_em: string | null; enviados: number };
 type LiberacaoDiariaRow = {
   veiculo_id: string;
   filial_id: string;
@@ -376,6 +389,26 @@ export type Database = {
             referencedColumns: ['id'];
           },
         ];
+      };
+      push_dispositivos: {
+        Row: PushDispositivoRow;
+        Insert: Ins<PushDispositivoRow, 'user_id' | 'tipo' | 'destino'>;
+        Update: Partial<PushDispositivoRow>;
+        Relationships: [
+          {
+            foreignKeyName: 'push_dispositivos_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      push_disparos: {
+        Row: PushDisparoRow;
+        Insert: Ins<PushDisparoRow, 'momento' | 'dia'>;
+        Update: Partial<PushDisparoRow>;
+        Relationships: [];
       };
       liberacoes_diarias: {
         Row: LiberacaoDiariaRow;

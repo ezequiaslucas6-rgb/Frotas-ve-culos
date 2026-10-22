@@ -29,9 +29,10 @@ roda na **sua VPS** em Docker, atrás do Nginx, num subdomínio com HTTPS.
    11. `20260111000000_ordem_fotos_checklist.sql` (ordem das fotos: externo, lado direito, lado esquerdo; interno por
       último)
    12. `20260112000000_motorista_folga.sql` (dias de folga do motorista: sem checklist pendente nesses dias)
+   13. `20260113000000_notificacoes_push.sql` (aparelhos e disparos das notificações por push)
 
    **Já tinha o sistema instalado?** Rode apenas o que ainda não rodou (nessa ordem, separados) e depois atualize o
-   app na VPS. Quem já está com os itens 1–10 roda só os itens 11 e 12 (um por vez).
+   app na VPS. Quem já está com os itens 1–10 roda só os itens 11, 12 e 13 (um por vez).
 2. Execute `supabase/seed.sql` (filiais de exemplo).
 3. **Primeiro Administrador Geral (obrigatório).** Crie o usuário em *Authentication → Users → Add user* (marque
    *Auto Confirm User*) e vincule-o como admin:
@@ -86,7 +87,9 @@ Depois da primeira instalação, ninguém precisa atualizar nada à mão:
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | navegador e servidor (sempre sob RLS). Embutidas no build: mudou? rode `docker compose up -d --build` |
 | `SUPABASE_SERVICE_ROLE_KEY` | **só servidor**: criar supervisores, liberar/redefinir/remover o acesso de motoristas e o cron |
-| `CRON_SECRET` | protege `/api/cron/alertas` |
+| `CRON_SECRET` | protege `/api/cron/alertas` e `/api/cron/lembretes` |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | notificações no navegador (Web Push). O instalador gera; não troque (quem ativou teria de ativar de novo) |
+| `FCM_CONTA_SERVICO_BASE64` | notificações no APK (Firebase): conta de serviço em base64. Veja *Notificações* |
 | `FROTAS_PORTA` | porta local do container (padrão 3010) |
 
 ## 3. App Android (APK)
@@ -117,15 +120,53 @@ Cadastre os 4 valores em *Settings → Secrets and variables → Actions → New
 usada. Nos celulares, desinstale o app antigo **uma última vez**; daí em diante, cada versão instala por cima.
 Guarde uma cópia de `~/rodar-chave-apk` fora da VPS e **nunca** coloque a chave no repositório (ele é público).
 
-**Lembretes no celular.** O APK avisa, no horário de Pimenta Bueno (America/Porto_Velho):
+## Notificações (lembretes do checklist)
+Horário de Pimenta Bueno (America/Porto_Velho), **na hora certa**:
 - **08:00, motorista:** o checklist do dia de cada veículo dele (o diário até as 08:30; no sábado e no domingo, o
-  semanal obrigatório; ou que o veículo está *não liberado* por falta do semanal). Quem já fez não recebe nada.
+  semanal obrigatório; ou que o veículo está *não liberado* por falta do semanal). Quem já fez, quem está de **folga** e
+  quem tem o veículo parado por avaria não recebe nada.
 - **08:30, supervisor e Administrador Geral:** quantos veículos fizeram o diário e quantos esperam a decisão de
   liberar ou não (toque abre **Checklist de hoje**).
 
-Na hora, o app pergunta ao sistema o que avisar (`/api/lembretes`, com o login do próprio app). Sem internet às 08:00,
-o motorista recebe um lembrete simples. Na primeira abertura o Android pede para permitir notificações (Android 13+).
-Os alarmes voltam sozinhos depois de reiniciar o celular.
+**Como chega na hora.** Antes, o aviso dependia do alarme do próprio celular, que o Android atrasa ou cancela para
+poupar bateria (ainda mais em Xiaomi/Redmi). Agora quem avisa é o **servidor**: um agendador na VPS roda todo minuto
+(`/api/cron/lembretes`) e, às 08:00 e às 08:30, envia o **push** para cada aparelho cadastrado, uma única vez por dia
+(tabela `push_disparos`; se a VPS estava fora do ar no minuto exato, ainda envia até 15 min depois):
+- **PC e navegador (Chrome, Edge, Firefox):** *Web Push*. Ao entrar, aparece *"Receba os avisos do checklist na hora"*;
+  toque em **Ativar notificações** (ou em **Perfil → Notificações**). Chega mesmo com a aba fechada, desde que o navegador
+  esteja aberto ou rodando em segundo plano (no Chrome: *Configurações → Sistema → Continuar executando aplicativos em
+  segundo plano*). **Perfil → Notificações → Enviar teste** confere na hora. As chaves (VAPID) o instalador gera sozinho.
+- **APK:** push do **Firebase** (gratuito), que acorda o celular na hora, mesmo com o app fechado. Precisa ser
+  configurado uma vez (abaixo). O alarme do celular continua como **reserva**: dispara 3 minutos depois e só avisa se o
+  push não chegou.
+
+Quem sai da conta (*Sair*) deixa de receber os avisos naquele aparelho. Se outra pessoa entrar no mesmo PC ou celular,
+o aparelho passa a ser dela.
+
+**Ligar o push do APK (uma vez, ~10 minutos):**
+1. Em [console.firebase.google.com](https://console.firebase.google.com) crie um projeto (ex.: *Rodar*; o Google
+   Analytics pode ficar desligado).
+2. No projeto: **Adicionar app → Android**, com o nome do pacote **`br.com.gestaofrotas.app`**. Baixe o
+   **`google-services.json`** e pule o resto do assistente.
+3. **Configurações do projeto (engrenagem) → Contas de serviço → Gerar nova chave privada**: baixa um arquivo `.json`.
+4. No GitHub: *Settings → Secrets and variables → Actions → New repository secret*, nome
+   **`GOOGLE_SERVICES_JSON_BASE64`**, valor = o `google-services.json` do passo 2 em base64
+   (`base64 -w0 google-services.json`; no Windows: `[Convert]::ToBase64String([IO.File]::ReadAllBytes("google-services.json"))`).
+5. Na VPS, coloque a conta de serviço (passo 3) em base64 em `FCM_CONTA_SERVICO_BASE64` no `/opt/frotas/.env`
+   (`base64 -w0 arquivo-da-conta.json`) e rode `bash /opt/frotas/deploy/atualizar.sh`.
+6. Gere o APK de novo (*Actions → App Android (APK) → Run workflow*), atualize o app nos celulares e abra-o logado. Em
+   **Perfil → Notificações → Enviar teste** a notificação chega em instantes.
+
+Sem os passos 1 a 6, o APK continua avisando só pelo alarme do celular (menos pontual).
+
+**Celulares Xiaomi/Redmi (HyperOS/MIUI):** o sistema encerra apps em segundo plano. Na primeira abertura o app pede para
+**não economizar bateria** (toque em *Permitir*). Também confira em *Configurações → Apps → Rodar*: **Início
+automático** ligado, **Economia de bateria → Sem restrições**, e as notificações do canal *Lembretes do checklist*
+permitidas (com a tela de bloqueio). Fixar o app nos recentes (cadeado) ajuda.
+
+Detalhe técnico: o app também pergunta ao sistema o que avisar (`/api/lembretes`, com o login do próprio app) no alarme
+de reserva. Sem internet às 08:00, o motorista recebe um lembrete simples. Na primeira abertura o Android pede para
+permitir notificações (Android 13+). Os alarmes voltam sozinhos depois de reiniciar o celular.
 
 **Login no celular.** A sessão fica salva no app e não expira sozinha: o cookie vale 400 dias e é renovado a cada uso
 (inclusive pelo lembrete das 08:00, que grava a sessão renovada antes de terminar). Ela só acaba se a pessoa tocar em

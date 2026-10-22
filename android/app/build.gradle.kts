@@ -5,6 +5,13 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// Notificações por push (Firebase Cloud Messaging): só com o google-services.json do projeto
+// (o workflow o grava a partir do secret GOOGLE_SERVICES_JSON_BASE64). Sem ele o APK compila igual
+// e usa só o alarme do próprio celular, menos pontual.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 // Endereço do sistema aberto pelo app (o workflow pode trocar com -PappUrl=...)
 val appUrl = (findProperty("appUrl") as String?)?.takeIf { it.isNotBlank() }
     ?: "https://frotas.209.50.240.59.sslip.io/"
@@ -69,4 +76,6 @@ kotlin {
 dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-ktx:1.9.3")
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation("com.google.firebase:firebase-messaging")
 }
