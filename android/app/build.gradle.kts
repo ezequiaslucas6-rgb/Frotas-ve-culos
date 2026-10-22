@@ -76,6 +76,8 @@ kotlin {
 dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-ktx:1.9.3")
+    // o Firebase traz um androidx.fragment antigo (< 1.3.0), que o lint recusa com o registerForActivityResult
+    implementation("androidx.fragment:fragment:1.8.5")
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
     implementation("com.google.firebase:firebase-messaging")
 }
