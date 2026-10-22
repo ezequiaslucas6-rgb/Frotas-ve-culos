@@ -64,12 +64,12 @@ async function escoposDoMomento(supabase: Client, userIds: string[], momento: Mo
   if (!userIds.length) return escopos;
   const [{ data: perfis }, { data: motoristas }] = await Promise.all([
     supabase.from('profiles').select('id, role, filial_id').in('id', userIds),
-    supabase.from('motoristas').select('id, user_id, status, dias_folga').in('user_id', userIds),
+    supabase.from('motoristas').select('id, user_id, status, folgas_fim_semana').in('user_id', userIds),
   ]);
   for (const p of perfis ?? []) {
     if (p.role === 'motorista') {
       const m = (motoristas ?? []).find((x) => x.user_id === p.id);
-      if (m && m.status !== 'inativo') escopos.set(p.id, { papel: 'motorista', motoristaId: m.id, diasFolga: m.dias_folga });
+      if (m && m.status !== 'inativo') escopos.set(p.id, { papel: 'motorista', motoristaId: m.id, folgas: m.folgas_fim_semana });
     } else if (p.role === 'supervisor' && p.filial_id) {
       escopos.set(p.id, { papel: 'supervisor', filialId: p.filial_id });
     } else if (p.role === 'admin') {

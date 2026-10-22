@@ -36,7 +36,7 @@ export default async function MeuVeiculoPage() {
   // RLS: o motorista só recebe o próprio cadastro (se ativo), os veículos dele e os próprios lançamentos.
   const periodos = periodosCobranca(hoje);
   const [{ data: eu }, { data: veiculos }, { data: abastecimentos }, { data: bloqueios }, { data: checklists }, { data: decisoes }] = await Promise.all([
-    supabase.from('motoristas').select('id, cnh_validade, dias_folga').maybeSingle(),
+    supabase.from('motoristas').select('id, cnh_validade, folgas_fim_semana').maybeSingle(),
     supabase
       .from('veiculos')
       .select('id, placa, marca, modelo, ano, km_atual, foto_geral_url, documento_url, proxima_revisao_km, proxima_revisao_data, created_at')
@@ -155,9 +155,9 @@ export default async function MeuVeiculoPage() {
                   const situacao = cobranca.get(v.id);
                   const bloqueado = (bloqueios ?? []).some((x) => x.veiculo_id === v.id);
                   if (!situacao || bloqueado) return null;
-                  const semanal = situacaoSemanal(situacao.semanal, hoje, v.created_at, eu.dias_folga);
+                  const semanal = situacaoSemanal(situacao.semanal, hoje, v.created_at, eu.folgas_fim_semana);
                   const decisao = (decisoes ?? []).find((d) => d.veiculo_id === v.id);
-                  const diaria = situacaoDiaria(situacao.diario, decisao?.liberado ?? null, new Date(), eu.dias_folga);
+                  const diaria = situacaoDiaria(situacao.diario, decisao?.liberado ?? null, new Date(), eu.folgas_fim_semana);
                   return (
                     <div className="flex flex-col gap-2" aria-label="Checklists do período">
                       <AvisoRotina veiculoId={v.id} semanal={semanal} diaria={diaria} observacao={decisao?.observacao ?? null} hoje={hoje} />

@@ -32,8 +32,8 @@ type MotoristaRow = {
   email: string;
   whatsapp: string | null;
   cnh: string | null;
-  /** dias da semana sem trabalho (0 = domingo … 6 = sábado): sem checklist cobrado */
-  dias_folga: number[];
+  /** folgas da semana (revezamento): a sexta que abre cada fim de semana de folga (sex, sáb e dom) */
+  folgas_fim_semana: string[];
   status: MotoristaStatus;
   created_at: string;
   user_id: string | null;
@@ -172,7 +172,7 @@ type VeiculoPainelRow = {
   liberacao_diaria: boolean | null;
   liberacao_diaria_em: string | null;
   liberacao_diaria_obs: string | null;
-  motorista_dias_folga: number[] | null;
+  motorista_folgas: string[] | null;
 };
 type PushDispositivoRow = {
   id: string;

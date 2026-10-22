@@ -7,7 +7,7 @@ import type { Database } from '@/types/database';
 
 /** De quem são os lembretes: o motorista (veículos dele), o supervisor (filial) ou o admin (frota). */
 export type EscopoLembrete =
-  | { papel: 'motorista'; motoristaId: string; diasFolga: readonly number[] }
+  | { papel: 'motorista'; motoristaId: string; folgas: readonly string[] }
   | { papel: 'supervisor'; filialId: string }
   | { papel: 'admin' };
 
@@ -49,8 +49,8 @@ export async function carregarNotificacoes(
       return {
         id: v.id,
         placa: v.placa,
-        semanal: situacaoSemanal(s.semanal, hoje, v.created_at, escopo.diasFolga),
-        diaria: situacaoDiaria(s.diario, (decisoes ?? []).find((d) => d.veiculo_id === v.id)?.liberado ?? null, agora, escopo.diasFolga),
+        semanal: situacaoSemanal(s.semanal, hoje, v.created_at, escopo.folgas),
+        diaria: situacaoDiaria(s.diario, (decisoes ?? []).find((d) => d.veiculo_id === v.id)?.liberado ?? null, agora, escopo.folgas),
         parado: (bloqueios ?? []).some((b) => b.veiculo_id === v.id),
       };
     });

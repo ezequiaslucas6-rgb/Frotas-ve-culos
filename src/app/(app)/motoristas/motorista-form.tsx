@@ -11,12 +11,10 @@ import { FileUpload } from '@/components/ui/file-upload';
 import { FormMessage, SubmitButton } from '@/components/ui/form-feedback';
 import { Input, Select, Textarea } from '@/components/ui/input';
 import { MaskedInput } from '@/components/ui/masked-input';
-import { NOMES_DIAS, NOMES_DIAS_CURTOS } from '@/lib/checklist/cobranca';
 import { useServerForm } from '@/hooks/use-server-form';
 import { UFS } from '@/lib/format';
 import { CNH_CATEGORIAS } from '@/lib/motoristas/cnh';
 import { uuid } from '@/lib/uuid';
-import { cn } from '@/lib/utils';
 import type { Tables } from '@/types/database';
 
 interface MotoristaFormProps {
@@ -36,9 +34,6 @@ export function MotoristaForm({ filiais, filialFixaId, motorista, cnhFrenteUrl, 
   const [filialId, setFilialId] = useState<string>(motorista?.filial_id ?? filialFixaId ?? '');
   // pasta estável das imagens da CNH (id real na edição; provisório no cadastro)
   const [pastaId] = useState(() => motorista?.id ?? uuid());
-  // dias da semana sem trabalho (0 = domingo … 6 = sábado)
-  const [diasFolga, setDiasFolga] = useState<number[]>(() => motorista?.dias_folga ?? []);
-  const alternarFolga = (dia: number) => setDiasFolga((d) => (d.includes(dia) ? d.filter((x) => x !== dia) : [...d, dia]));
   const pasta = filialId ? `${filialId}/${pastaId}` : null;
 
   return (
@@ -99,46 +94,6 @@ export function MotoristaForm({ filiais, filialFixaId, motorista, cnhFrenteUrl, 
               aria-invalid={!!fieldError('whatsapp')}
             />
           </Field>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Folga semanal</CardTitle>
-          <CardDescription>
-            Dias em que o motorista não trabalha. Nesses dias o veículo dele não gera checklist diário pendente. Com sábado e domingo de folga,
-            o checklist semanal do fim de semana também não é cobrado (o veículo não fica &quot;não liberado&quot; na segunda).
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          <input type="hidden" name="dias_folga" value={diasFolga.join(',')} />
-          <div role="group" aria-label="Dias de folga" className="flex flex-wrap gap-2">
-            {/* a semana começa na segunda */}
-            {[1, 2, 3, 4, 5, 6, 0].map((dia) => {
-              const marcado = diasFolga.includes(dia);
-              return (
-                <button
-                  key={dia}
-                  type="button"
-                  aria-pressed={marcado}
-                  aria-label={NOMES_DIAS[dia]}
-                  onClick={() => alternarFolga(dia)}
-                  className={cn(
-                    'min-w-14 rounded-xl border px-3 py-2.5 text-sm font-semibold capitalize transition-colors',
-                    marcado ? 'border-primary bg-primary/15 text-primary' : 'border-border bg-raised/60 text-muted-foreground hover:border-primary/50',
-                  )}
-                >
-                  {NOMES_DIAS_CURTOS[dia]}
-                </button>
-              );
-            })}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {diasFolga.length
-              ? 'Marcados são dias de folga. Toque de novo para desmarcar.'
-              : 'Nenhuma folga: o motorista trabalha todos os dias. Ex.: veículo que para na sexta e volta na segunda, marque sex, sáb e dom.'}
-          </p>
-          {fieldError('dias_folga') ? <p className="text-xs text-destructive-text">{fieldError('dias_folga')}</p> : null}
         </CardContent>
       </Card>
 

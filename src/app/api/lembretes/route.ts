@@ -22,9 +22,9 @@ export async function GET(request: Request) {
   let escopo: EscopoLembrete;
   if (session.isMotorista) {
     // RLS: o motorista lê só o próprio cadastro
-    const { data: eu } = await supabase.from('motoristas').select('id, dias_folga').maybeSingle();
+    const { data: eu } = await supabase.from('motoristas').select('id, folgas_fim_semana').maybeSingle();
     if (!eu) return json({ notificacoes: [], papel });
-    escopo = { papel: 'motorista', motoristaId: eu.id, diasFolga: eu.dias_folga };
+    escopo = { papel: 'motorista', motoristaId: eu.id, folgas: eu.folgas_fim_semana };
   } else if (papel === 'supervisor' && session.profile.filial_id) {
     escopo = { papel: 'supervisor', filialId: session.profile.filial_id };
   } else {

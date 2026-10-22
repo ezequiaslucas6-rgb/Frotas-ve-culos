@@ -11,7 +11,8 @@ import { Input } from '@/components/ui/input';
 import { EmptyState, PageHeader } from '@/components/ui/page-header';
 import { CnhBadge, MotoristaStatusBadge } from '@/components/ui/status-badges';
 import { requireSession } from '@/lib/auth';
-import { descreverFolga } from '@/lib/checklist/cobranca';
+import { BotaoFolga } from '@/components/motoristas/botao-folga';
+import { descreverFolga, folgaVigente, sextaDaSemana } from '@/lib/checklist/cobranca';
 import { toISODate } from '@/lib/dates';
 import { formatFilial } from '@/lib/format';
 import { situacaoCnh } from '@/lib/motoristas/cnh';
@@ -86,7 +87,7 @@ export default async function MotoristasPage({ searchParams }: { searchParams: P
                     {[
                       m.cpf ? `CPF ${formatCpf(m.cpf)}` : 'CPF não informado',
                       m.cnh_categoria ? `CNH ${m.cnh_categoria}` : null,
-                      m.dias_folga.length ? `Folga: ${descreverFolga(m.dias_folga)}` : null,
+                      folgaVigente(m.folgas_fim_semana, hoje) ? `Folga: ${descreverFolga(folgaVigente(m.folgas_fim_semana, hoje)!)}` : null,
                       isAdmin && m.filiais ? formatFilial(m.filiais) : null,
                     ]
                       .filter(Boolean)
@@ -116,6 +117,7 @@ export default async function MotoristasPage({ searchParams }: { searchParams: P
                     <MessageCircle /> {formatWhatsapp(m.whatsapp)}
                   </a>
                 ) : null}
+                <BotaoFolga motoristaId={m.id} ativaInicial={m.folgas_fim_semana.includes(sextaDaSemana(hoje))} periodo={descreverFolga(sextaDaSemana(hoje))} size="sm" />
                 <span className="flex-1" />
                 <Link href={`/motoristas/${m.id}/editar`} className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
                   <Pencil /> Editar

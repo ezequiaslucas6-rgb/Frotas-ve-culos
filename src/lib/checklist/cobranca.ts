@@ -8,9 +8,9 @@
  *    segunda em diante, até fazer (o atrasado continua valendo para aquela semana).
  *  - MENSAL: o do mês, sem bloqueio.
  *
- * FOLGA do motorista (dias da semana em que ele não trabalha, ex.: sexta a domingo): o veículo
- * dele não gera checklist diário pendente nesses dias e, com sábado E domingo de folga, o
- * semanal do fim de semana também não é cobrado (não fica "não liberado" na segunda).
+ * FOLGA da semana do motorista (sexta, sábado e domingo, no revezamento de plantão): o veículo
+ * dele não gera checklist diário pendente nesses dias e o semanal do fim de semana de folga não
+ * é cobrado (o veículo não fica "não liberado" na segunda). A folga acaba sozinha no domingo.
  *
  * Um checklist maior cobre os menores (o modelo do semanal contém as fotos do diário, e o do
  * mensal as do semanal):
@@ -34,25 +34,6 @@ export const LEMBRETE_MOTORISTA = '08:00';
  */
 export const SEMANAL_OBRIGATORIO_DESDE = '2026-10-10';
 
-/** Dias de folga do motorista: 0 = domingo … 6 = sábado (vazio ou ausente = trabalha todos os dias). */
-export type DiasFolga = readonly number[] | null | undefined;
-
-export const NOMES_DIAS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'] as const;
-export const NOMES_DIAS_CURTOS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'] as const;
-
-/** O motorista está de folga em `dia` (YYYY-MM-DD)? */
-export const emFolga = (diasFolga: DiasFolga, dia: string) => Boolean(diasFolga?.includes(diaDaSemana(dia)));
-
-/** Sábado e domingo de folga: o semanal do fim de semana não é cobrado. */
-export const semanalDispensado = (diasFolga: DiasFolga) => Boolean(diasFolga?.includes(6) && diasFolga.includes(0));
-
-/** "sex, sáb e dom" (na ordem da semana, começando na segunda); '' se não há folga. */
-export function descreverFolga(diasFolga: DiasFolga): string {
-  const dias = [...new Set(diasFolga ?? [])].filter((d) => d >= 0 && d <= 6).sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7));
-  const nomes = dias.map((d) => NOMES_DIAS_CURTOS[d]!);
-  return nomes.length > 1 ? `${nomes.slice(0, -1).join(', ')} e ${nomes.at(-1)}` : (nomes[0] ?? '');
-}
-
 export interface PeriodosCobranca {
   /** início (YYYY-MM-DD) de cada período */
   diario: string;
@@ -64,6 +45,40 @@ export interface PeriodosCobranca {
 export function inicioDoCicloSemanal(dia: string): string {
   return addDays(dia, -((diaDaSemana(dia) + 1) % 7));
 }
+
+/**
+ * Folga da semana do motorista (revezamento de plantão): o supervisor toca em "Folga da semana" e o
+ * motorista fica de folga na SEXTA, no SÁBADO e no DOMINGO daquela semana (semana de segunda a
+ * domingo). Cada folga é guardada pela data da sexta-feira que a abre e acaba sozinha no domingo:
+ * na segunda o motorista volta, sem ninguém precisar desmarcar.
+ */
+export type Folgas = readonly string[] | null | undefined;
+
+/** Sexta-feira da semana de `dia` (semana de segunda a domingo): o início do fim de semana de folga. */
+export const sextaDaSemana = (dia: string) => addDays(dia, 4 - ((diaDaSemana(dia) + 6) % 7));
+
+/** Último dia (domingo) da folga que começa na sexta `sexta`. */
+export const domingoDaFolga = (sexta: string) => addDays(sexta, 2);
+
+/** O motorista está de folga em `dia` (YYYY-MM-DD)? Vale a sexta, o sábado e o domingo de cada folga marcada. */
+export const emFolga = (folgas: Folgas, dia: string) => Boolean(folgas?.some((sexta) => dia >= sexta && dia <= domingoDaFolga(sexta)));
+
+/**
+ * O semanal do ciclo de `hoje` (sábado e domingo) está dispensado? Sim, se o motorista estava de
+ * folga naquele fim de semana: o sábado e o domingo são do ciclo, e a sexta antes deles é a que
+ * abre a folga. Continua valendo de segunda a sexta (o veículo não fica "não liberado" na segunda).
+ */
+export const semanalDispensado = (folgas: Folgas, hoje: string) => Boolean(folgas?.includes(addDays(inicioDoCicloSemanal(hoje), -1)));
+
+const SEM = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'] as const;
+const curto = (dia: string) => `${SEM[diaDaSemana(dia)]} ${dia.slice(8, 10)}/${dia.slice(5, 7)}`;
+
+/** "sex 24/10 a dom 26/10": os dias exatos da folga que começa na sexta `sexta`. */
+export const descreverFolga = (sexta: string) => `${curto(sexta)} a ${curto(domingoDaFolga(sexta))}`;
+
+/** A folga em andamento ou a próxima (a que o motorista tem agora ou ainda vai ter), se houver. */
+export const folgaVigente = (folgas: Folgas, hoje: string): string | null =>
+  [...(folgas ?? [])].filter((sexta) => domingoDaFolga(sexta) >= hoje).sort()[0] ?? null;
 
 /** Sábado ou domingo: os dias do checklist semanal. */
 export const ehFimDeSemana = (dia: string) => {
@@ -136,9 +151,9 @@ export function situacaoDaView(
  */
 export type SituacaoSemanal = 'feito' | 'folga' | 'fazer' | 'atrasado' | 'proximo';
 
-export function situacaoSemanal(feito: boolean, hoje: string, veiculoCriadoEm?: string | null, diasFolga?: DiasFolga): SituacaoSemanal {
+export function situacaoSemanal(feito: boolean, hoje: string, veiculoCriadoEm?: string | null, folgas?: Folgas): SituacaoSemanal {
   if (feito) return 'feito';
-  if (semanalDispensado(diasFolga)) return 'folga';
+  if (semanalDispensado(folgas, hoje)) return 'folga';
   if (ehFimDeSemana(hoje)) return 'fazer';
   const ciclo = inicioDoCicloSemanal(hoje);
   if (ciclo < SEMANAL_OBRIGATORIO_DESDE) return 'proximo';
@@ -162,10 +177,10 @@ export function situacaoDiaria(
   feito: boolean,
   decisao: boolean | null | undefined,
   agora: Date | string | number = new Date(),
-  diasFolga?: DiasFolga,
+  folgas?: Folgas,
 ): SituacaoDiaria {
   if (feito) return 'feito';
-  if (emFolga(diasFolga, toISODate(agora))) return 'folga';
+  if (emFolga(folgas, toISODate(agora))) return 'folga';
   if (decisao === true) return 'liberado';
   if (decisao === false) return 'nao_liberado';
   return horaLocal(agora) < PRAZO_DIARIO ? 'aguardando' : 'decidir';

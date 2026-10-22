@@ -23,16 +23,6 @@ describe('cadastro do motorista', () => {
     expect(Object.keys(r.error!.flatten().fieldErrors).sort()).toEqual(['cpf', 'whatsapp']);
   });
 
-  it('folga: "5,6,0" vira [0, 5, 6]; vazio ou ausente = sem folga; dia inválido é recusado', () => {
-    const schema = motoristaSchemaPara(false);
-    expect(schema.parse({ ...minimo, dias_folga: '5,6,0' }).dias_folga).toEqual([0, 5, 6]);
-    expect(schema.parse({ ...minimo, dias_folga: '3,3,3' }).dias_folga).toEqual([3]);
-    expect(schema.parse({ ...minimo, dias_folga: '' }).dias_folga).toEqual([]);
-    expect(schema.parse({ ...minimo }).dias_folga).toEqual([]);
-    expect(schema.safeParse({ ...minimo, dias_folga: '7' }).success).toBe(false);
-    expect(schema.safeParse({ ...minimo, dias_folga: 'sex' }).success).toBe(false);
-  });
-
   it('obrigatórios (sistema completo): exige CPF, WhatsApp, CNH, categoria e validade reais', () => {
     const r = motoristaSchemaPara(true).safeParse({ ...minimo, cpf: '111.111.111-11', cnh: '12345678901' });
     expect(r.success).toBe(false);

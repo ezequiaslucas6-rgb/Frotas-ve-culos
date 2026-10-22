@@ -10,7 +10,8 @@ import { EmptyState, PageHeader } from '@/components/ui/page-header';
 import { MotoristaStatusBadge } from '@/components/ui/status-badges';
 import { calcularConsumo, detectarConsumoAnormal } from '@/lib/abastecimento/consumo';
 import { requireSession } from '@/lib/auth';
-import { descreverFolga } from '@/lib/checklist/cobranca';
+import { BotaoFolga } from '@/components/motoristas/botao-folga';
+import { descreverFolga, folgaVigente, sextaDaSemana } from '@/lib/checklist/cobranca';
 import { toISODate } from '@/lib/dates';
 import { formatFilial, formatKm } from '@/lib/format';
 import { signedUrlMap } from '@/lib/storage';
@@ -44,6 +45,8 @@ export default async function MotoristaPage({ params }: { params: Promise<{ id: 
   const consumo = Object.assign({}, ...[...porVeiculo.values()].map((lista) => calcularConsumo(lista).porLancamento));
   const anomalias = Object.assign({}, ...[...porVeiculo.values()].map((lista) => detectarConsumoAnormal(lista).porLancamento));
 
+  const hoje = toISODate();
+  const folgaDaSemana = folgaVigente(m.folgas_fim_semana, hoje);
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -51,7 +54,7 @@ export default async function MotoristaPage({ params }: { params: Promise<{ id: 
         description={[
           m.cpf ? `CPF ${formatCpf(m.cpf)}` : null,
           m.filiais ? formatFilial(m.filiais) : null,
-          m.dias_folga.length ? `Folga: ${descreverFolga(m.dias_folga)}` : null,
+          folgaDaSemana ? `Folga: ${descreverFolga(folgaDaSemana)}` : null,
         ]
           .filter(Boolean)
           .join(' · ')}
@@ -67,6 +70,8 @@ export default async function MotoristaPage({ params }: { params: Promise<{ id: 
                 <MessageCircle /> {formatWhatsapp(m.whatsapp)}
               </a>
             ) : null}
+            {/* revezamento de plantão: sexta, sábado e domingo desta semana; acaba sozinha no domingo */}
+            <BotaoFolga motoristaId={m.id} ativaInicial={m.folgas_fim_semana.includes(sextaDaSemana(hoje))} periodo={descreverFolga(sextaDaSemana(hoje))} />
             <Link href={`/motoristas/${m.id}/editar`} className={buttonVariants({ variant: 'outline' })}>
               <Pencil /> Editar
             </Link>

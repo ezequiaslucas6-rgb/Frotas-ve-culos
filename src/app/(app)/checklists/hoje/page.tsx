@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState, PageHeader } from '@/components/ui/page-header';
 import { ChecklistStatusBadge } from '@/components/ui/status-badges';
 import { requireSession } from '@/lib/auth';
-import { PRAZO_DIARIO, descreverFolga, diasDoSemanal, ehFimDeSemana, type SituacaoDiaria } from '@/lib/checklist/cobranca';
+import { PRAZO_DIARIO, descreverFolga, diasDoSemanal, ehFimDeSemana, folgaVigente, type SituacaoDiaria } from '@/lib/checklist/cobranca';
 import { horaLocal, toISODate } from '@/lib/dates';
 import { formatDateISO, formatDateTime, formatFilial } from '@/lib/format';
 import { avaliarVeiculoPainel } from '@/lib/maintenance/alerts';
@@ -122,7 +122,7 @@ export default async function ChecklistDeHojePage({ searchParams }: { searchPara
                       {[
                         v.modelo,
                         v.motorista_nome ?? 'sem motorista',
-                        v.diaria === 'folga' ? `folga: ${descreverFolga(v.motorista_dias_folga)}` : null,
+                        v.diaria === 'folga' && folgaVigente(v.motorista_folgas, hoje) ? `folga: ${descreverFolga(folgaVigente(v.motorista_folgas, hoje)!)}` : null,
                         isAdmin && !filialId ? formatFilial(v) : null,
                       ]
                         .filter(Boolean)

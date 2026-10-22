@@ -66,14 +66,6 @@ const onzeDigitosOpcional = (rotulo: string) =>
     z.string().regex(/^\d{11}$/, `${rotulo}: use 11 dígitos.`).optional(),
   );
 
-/** Dias de folga: "5,6,0" (campo escondido do formulário) -> [0, 5, 6]; vazio = sem folga (0 = domingo … 6 = sábado). */
-const diasFolga = z.preprocess(
-  (v) => (typeof v === 'string' ? v.split(',').map((x) => x.trim()).filter(Boolean).map(Number) : (v ?? [])),
-  z
-    .array(z.number('Dia de folga inválido.').int('Dia de folga inválido.').min(0, 'Dia de folga inválido.').max(6, 'Dia de folga inválido.'))
-    .transform((dias) => [...new Set(dias)].sort((a, b) => a - b)),
-);
-
 const whatsapp = z.string('Informe o WhatsApp.').transform((v, ctx) => {
   const normalized = normalizeWhatsapp(v);
   if (!normalized) ctx.issues.push({ code: 'custom', message: 'WhatsApp inválido. Use DDD + número.', input: v });
@@ -98,7 +90,6 @@ export const motoristaSchemaPara = (obrigatorios: boolean) =>
       whatsapp: obrigatorios ? whatsapp : z.preprocess(emptyToUndefined, whatsapp.optional()),
       cnh: obrigatorios ? z.string('Informe a CNH.').refine(isValidCnh, 'CNH inválida.').transform(onlyDigits) : onzeDigitosOpcional('CNH'),
       status: z.enum(['ativo', 'inativo', 'afastado', 'ferias']).default('ativo'),
-      dias_folga: diasFolga,
       // CNH
       cnh_categoria: obrigatorios
         ? z.enum(CNH_CATEGORIAS, 'Selecione a categoria.')
