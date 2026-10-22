@@ -291,11 +291,26 @@ describe('modelos de checklist', () => {
   it('todos os logados leem o catálogo e os modelos; anon não', async () => {
     await as(SUP_SP, async () => {
       const grupos = await rows<{ grupo: string }>('select distinct grupo from public.checklist_itens where ativo order by grupo');
-      expect(grupos.map((g) => g.grupo)).toEqual(['Avarias', 'Cabine', 'Exterior', 'Motor e fluidos', 'Pneus', 'Retrovisores']);
+      expect(grupos.map((g) => g.grupo)).toEqual(['Avarias', 'Cabine', 'Exterior', 'Lado direito', 'Lado esquerdo', 'Motor e fluidos']);
       const total = await rows<{ tipo: string; n: number }>('select tipo::text, count(*)::int as n from public.checklist_modelo group by tipo order by tipo');
       expect(total).toEqual([{ tipo: 'diario', n: 18 }, { tipo: 'mensal', n: 24 }, { tipo: 'semanal', n: 22 }]);
     });
     await expect(as(null, () => rows('select * from public.checklist_itens'))).rejects.toThrow(/permission denied/);
+  });
+
+  it('ordem das fotos do diário: externo (frente/traseira, lado direito, lado esquerdo) e o interno por último', async () => {
+    const itens = await rows<{ codigo: string }>(
+      `select i.codigo from public.checklist_itens i join public.checklist_modelo m on m.item = i.codigo
+        where m.tipo = 'diario' order by i.ordem`,
+    );
+    expect(itens.map((i) => i.codigo)).toEqual([
+      'frente', 'traseira',
+      'lateral_direita', 'pneu_dianteiro_direito', 'retrovisor_direito', 'retrovisor_direito_carcaca', 'pneu_traseiro_direito',
+      'lateral_esquerda', 'pneu_dianteiro_esquerdo', 'retrovisor_esquerdo', 'retrovisor_esquerdo_carcaca', 'pneu_traseiro_esquerdo',
+      'nivel_oleo', 'fluido_freio', 'nivel_agua',
+      'painel', 'bancos',
+      'vazamento_avaria',
+    ]);
   });
 
   it('supervisor não altera modelos nem o catálogo', async () => {

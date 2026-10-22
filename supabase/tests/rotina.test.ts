@@ -127,3 +127,39 @@ describe('view do painel: último semanal e mensal', () => {
     expect(new Date(p.ultimo_mensal_em!).toISOString()).toBe('2026-10-10T12:00:00.000Z');
   });
 });
+
+describe('folga do motorista (migration 20260112)', () => {
+  const folgaNoPainel = (veiculo: string) =>
+    rows<{ motorista_dias_folga: number[] | null }>('select motorista_dias_folga from public.vw_veiculos_painel where id = $1', [veiculo]).then((r) => r[0]!.motorista_dias_folga);
+
+  it('sem folga por padrão; veículo sem motorista não tem folga', async () => {
+    expect(await folgaNoPainel(V_1)).toEqual([]);
+    expect(await folgaNoPainel(V_2)).toBeNull();
+  });
+
+  it('o supervisor da filial define a folga (sex, sáb e dom) e o painel a entrega com o veículo', async () => {
+    await as(SUP_SP, async () => {
+      expect((await db.query(`update public.motoristas set dias_folga = '{5,6,0}' where id = $1`, [M_1])).affectedRows).toBe(1);
+      expect(await folgaNoPainel(V_1)).toEqual([5, 6, 0]);
+    });
+  });
+
+  it('o motorista vê a própria folga, mas não a altera', async () => {
+    await as(DRV, async () => {
+      expect(await folgaNoPainel(V_1)).toEqual([5, 6, 0]);
+      expect((await db.query(`update public.motoristas set dias_folga = '{}' where id = $1`, [M_1])).affectedRows).toBe(0);
+    });
+    expect(await folgaNoPainel(V_1)).toEqual([5, 6, 0]);
+  });
+
+  it('supervisor de outra filial não altera a folga', async () => {
+    await as(SUP_RJ, async () => {
+      expect((await db.query(`update public.motoristas set dias_folga = '{}' where id = $1`, [M_1])).affectedRows).toBe(0);
+    });
+  });
+
+  it('só dias de 0 (domingo) a 6 (sábado)', async () => {
+    await expect(db.query(`update public.motoristas set dias_folga = '{7}' where id = $1`, [M_1])).rejects.toThrow(/motoristas_dias_folga_chk/);
+    await expect(db.query(`update public.motoristas set dias_folga = '{-1}' where id = $1`, [M_1])).rejects.toThrow(/motoristas_dias_folga_chk/);
+  });
+});

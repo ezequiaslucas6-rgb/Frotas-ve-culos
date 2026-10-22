@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Ban, CalendarClock, CarFront, CircleCheck, ClipboardCheck, ExternalLink, FileText, Gauge, ShieldOff, TriangleAlert } from 'lucide-react';
+import { Ban, CalendarClock, CalendarOff, CarFront, CircleCheck, ClipboardCheck, ExternalLink, FileText, Gauge, ShieldOff, TriangleAlert } from 'lucide-react';
 import { BombaCombustivel } from '@/components/icones/bomba-combustivel';
 import { ListaAbastecimentos } from '@/components/abastecimentos/lista-abastecimentos';
 import { Placa } from '@/components/placa';
@@ -36,7 +36,7 @@ export default async function MeuVeiculoPage() {
   // RLS: o motorista só recebe o próprio cadastro (se ativo), os veículos dele e os próprios lançamentos.
   const periodos = periodosCobranca(hoje);
   const [{ data: eu }, { data: veiculos }, { data: abastecimentos }, { data: bloqueios }, { data: checklists }, { data: decisoes }] = await Promise.all([
-    supabase.from('motoristas').select('id, cnh_validade').maybeSingle(),
+    supabase.from('motoristas').select('id, cnh_validade, dias_folga').maybeSingle(),
     supabase
       .from('veiculos')
       .select('id, placa, marca, modelo, ano, km_atual, foto_geral_url, documento_url, proxima_revisao_km, proxima_revisao_data, created_at')
@@ -155,9 +155,9 @@ export default async function MeuVeiculoPage() {
                   const situacao = cobranca.get(v.id);
                   const bloqueado = (bloqueios ?? []).some((x) => x.veiculo_id === v.id);
                   if (!situacao || bloqueado) return null;
-                  const semanal = situacaoSemanal(situacao.semanal, hoje, v.created_at);
+                  const semanal = situacaoSemanal(situacao.semanal, hoje, v.created_at, eu.dias_folga);
                   const decisao = (decisoes ?? []).find((d) => d.veiculo_id === v.id);
-                  const diaria = situacaoDiaria(situacao.diario, decisao?.liberado ?? null);
+                  const diaria = situacaoDiaria(situacao.diario, decisao?.liberado ?? null, new Date(), eu.dias_folga);
                   return (
                     <div className="flex flex-col gap-2" aria-label="Checklists do período">
                       <AvisoRotina veiculoId={v.id} semanal={semanal} diaria={diaria} observacao={decisao?.observacao ?? null} hoje={hoje} />
@@ -171,6 +171,15 @@ export default async function MeuVeiculoPage() {
                               <span key={tipo} className="flex flex-col items-center gap-0.5 rounded-xl bg-success/12 px-1 py-2 text-center text-xs font-semibold text-success-text">
                                 <CircleCheck className="size-4" />
                                 {tipoLabel(tipo)} feito
+                              </span>
+                            );
+                          }
+                          // folga: nada a fazer (diário no dia de folga; semanal com sábado e domingo de folga)
+                          if ((tipo === 'diario' && diaria === 'folga') || (tipo === 'semanal' && semanal === 'folga')) {
+                            return (
+                              <span key={tipo} className="flex flex-col items-center gap-0.5 rounded-xl bg-raised px-1 py-2 text-center text-xs font-semibold text-muted-foreground">
+                                <CalendarOff className="size-4" />
+                                {tipoLabel(tipo)}: folga
                               </span>
                             );
                           }
@@ -283,6 +292,8 @@ function AvisoRotina({
   observacao: string | null;
   hoje: string;
 }) {
+  // dia de folga: nada a cobrar do motorista hoje
+  if (diaria === 'folga') return null;
   const vermelho = semanal === 'atrasado' || diaria === 'nao_liberado';
   if (!vermelho && semanal !== 'fazer') return null;
   const tipo = semanal === 'atrasado' || (semanal === 'fazer' && diaria !== 'nao_liberado') ? 'semanal' : 'diario';

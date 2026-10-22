@@ -26,9 +26,12 @@ roda na **sua VPS** em Docker, atrás do Nginx, num subdomínio com HTTPS.
       obrigatório, foto da carcaça dos retrovisores)
    10. `20260110000000_motorista_dados_opcionais.sql` (CPF, WhatsApp e CNH do motorista opcionais no banco, para a
       fase de testes)
+   11. `20260111000000_ordem_fotos_checklist.sql` (ordem das fotos: externo, lado direito, lado esquerdo; interno por
+      último)
+   12. `20260112000000_motorista_folga.sql` (dias de folga do motorista: sem checklist pendente nesses dias)
 
    **Já tinha o sistema instalado?** Rode apenas o que ainda não rodou (nessa ordem, separados) e depois atualize o
-   app na VPS. Quem já está com os itens 1–9 roda só o item 10.
+   app na VPS. Quem já está com os itens 1–10 roda só os itens 11 e 12 (um por vez).
 2. Execute `supabase/seed.sql` (filiais de exemplo).
 3. **Primeiro Administrador Geral (obrigatório).** Crie o usuário em *Authentication → Users → Add user* (marque
    *Auto Confirm User*) e vincule-o como admin:
@@ -301,10 +304,12 @@ validado na própria VPS, sem essa ida. O `deploy/diagnostico.sh` mostra qual é
 ## Checklist diário, semanal e mensal
 | Tipo | Fotos (padrão) |
 |---|---|
-| **Diário** | Exterior (frente, traseira, 2 laterais) · **Pneus** (os 4) · **Retrovisores** (os 2 espelhos e a **carcaça** de cada um, por trás) · **Motor e fluidos** (óleo, fluido de freio, água do arrefecimento) · Cabine (painel com KM, **bancos**) — 17 fotos |
+| **Diário** | Exterior (frente, traseira) · **Lado direito** (lateral, pneu dianteiro, retrovisor e a **carcaça** dele por trás, pneu traseiro) · **Lado esquerdo** (o mesmo, do outro lado) · **Motor e fluidos** (óleo, fluido de freio, água do arrefecimento) · Cabine (painel com KM, **bancos**) — 17 fotos |
 | **Semanal** | Diário + luzes, para-brisa, estepe, carroceria/porta-malas — 21 fotos |
 | **Mensal** | Semanal + compartimento do motor, equipamentos obrigatórios — 23 fotos |
 
+**Ordem das fotos:** o motorista dá a volta no veículo — primeiro tudo o que é **externo** (frente e traseira; depois o
+**lado direito** inteiro; depois o **lado esquerdo** inteiro) e, por último, o que é **interno** (motor e fluidos, cabine).
 Em todos os tipos: **"O veículo tem algum vazamento ou avaria?" Sim/Não** — no "Sim" a foto (com Atenção/Avaria e
 descrição) passa a ser obrigatória. O Administrador Geral ajusta o que cada tipo exige em **Checklists → Modelos**.
 
@@ -328,6 +333,13 @@ numa transação.
 - **Semanal — obrigatório no sábado ou no domingo.** Sem ele, o veículo fica **não liberado** de segunda em diante,
   até fazer (vale a partir do fim de semana de 10/10/2026; veículo cadastrado depois do sábado só entra no próximo).
 - **Mensal:** o do mês, sem bloqueio.
+- **Folga do motorista.** Em **Motoristas → editar → Folga semanal**, marque os dias da semana em que ele não trabalha
+  (ex.: o veículo para na sexta e volta na segunda: **sex, sáb e dom**). Nesses dias o veículo dele **não gera
+  checklist diário pendente** (não entra em *decidir* nem no resumo das 08:30, e o motorista não recebe o lembrete das
+  08:00). Com **sábado e domingo** de folga, o **semanal** também não é cobrado e o veículo **não fica *não liberado* na
+  segunda**. Com só um dos dois dias de folga, o semanal é feito no outro. A folga vale para os veículos que têm esse
+  motorista como responsável e é semanal e fixa; o painel e *Checklist de hoje* mostram *Folga hoje*. Se o motorista
+  fizer o checklist mesmo assim, vale normalmente.
 
 Um checklist maior cobre os menores (o mensal vale como semanal e diário; o semanal, como diário). O painel mostra o
 quadro *Checklists* com os três e o que espera decisão; veículos parados por avaria ficam fora da cobrança até o

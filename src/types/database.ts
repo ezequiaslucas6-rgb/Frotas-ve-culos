@@ -32,6 +32,8 @@ type MotoristaRow = {
   email: string;
   whatsapp: string | null;
   cnh: string | null;
+  /** dias da semana sem trabalho (0 = domingo … 6 = sábado): sem checklist cobrado */
+  dias_folga: number[];
   status: MotoristaStatus;
   created_at: string;
   user_id: string | null;
@@ -170,6 +172,7 @@ type VeiculoPainelRow = {
   liberacao_diaria: boolean | null;
   liberacao_diaria_em: string | null;
   liberacao_diaria_obs: string | null;
+  motorista_dias_folga: number[] | null;
 };
 type LiberacaoDiariaRow = {
   veiculo_id: string;

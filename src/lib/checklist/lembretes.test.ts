@@ -41,3 +41,24 @@ describe('resumo do supervisor (08:30)', () => {
     expect(lembreteSupervisor([])).toEqual([]);
   });
 });
+
+describe('folga do motorista', () => {
+  it('motorista de folga hoje não recebe lembrete (nem do diário, nem do semanal)', () => {
+    expect(lembretesMotorista([v({ diaria: 'folga' })])).toEqual([]);
+    expect(lembretesMotorista([v({ diaria: 'folga', semanal: 'fazer' })])).toEqual([]);
+    expect(lembretesMotorista([v({ diaria: 'folga', semanal: 'atrasado' })])).toEqual([]);
+  });
+
+  it('resumo do supervisor: veículo de folga fica fora da conta do diário', () => {
+    const [n] = lembreteSupervisor([v({ id: 'A', diaria: 'feito' }), v({ id: 'B', diaria: 'folga' }), v({ id: 'C', diaria: 'folga' })]);
+    expect(n).toMatchObject({ titulo: 'Checklist de hoje: tudo em dia', texto: '1 de 1 veículos fizeram o checklist diário.' });
+  });
+
+  it('todos de folga e nada atrasado: sem aviso; semanal atrasado ainda é avisado', () => {
+    expect(lembreteSupervisor([v({ diaria: 'folga' })])).toEqual([]);
+    expect(lembreteSupervisor([v({ diaria: 'folga', semanal: 'atrasado' })])[0]).toMatchObject({
+      titulo: 'Checklist de hoje: decisão pendente',
+      texto: '1 não liberado(s) por falta do semanal.',
+    });
+  });
+});

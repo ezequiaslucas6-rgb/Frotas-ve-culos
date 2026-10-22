@@ -25,12 +25,15 @@ export async function GET(request: Request) {
     if (momento !== '0800') return json({ notificacoes: [], papel: 'motorista' });
     // RLS: o motorista só recebe os veículos dele, os checklists feitos em seu nome e as decisões dos veículos dele
     const periodos = periodosCobranca(hoje);
-    const [{ data: veiculos }, { data: checklists }, { data: decisoes }, { data: bloqueios }] = await Promise.all([
+    const [{ data: veiculos }, { data: checklists }, { data: decisoes }, { data: bloqueios }, { data: eu }] = await Promise.all([
       supabase.from('veiculos').select('id, placa, created_at').order('placa'),
       supabase.from('checklists').select('veiculo_id, tipo, data_envio').gte('data_envio', inicioDoDia(inicioDaBusca(periodos))),
       supabase.from('liberacoes_diarias').select('veiculo_id, liberado').eq('dia', hoje),
       supabase.from('veiculo_bloqueios').select('veiculo_id').is('liberado_em', null),
+      // a folga é do motorista (RLS: ele lê só o próprio cadastro) e vale para os veículos dele
+      supabase.from('motoristas').select('dias_folga').maybeSingle(),
     ]);
+    const folga = eu?.dias_folga ?? [];
     const lista = veiculos ?? [];
     const feitos = situacaoCobranca(lista.map((v) => v.id), checklists ?? [], hoje);
     const itens: VeiculoLembrete[] = lista.map((v) => {
@@ -38,8 +41,8 @@ export async function GET(request: Request) {
       return {
         id: v.id,
         placa: v.placa,
-        semanal: situacaoSemanal(s.semanal, hoje, v.created_at),
-        diaria: situacaoDiaria(s.diario, (decisoes ?? []).find((d) => d.veiculo_id === v.id)?.liberado ?? null, agora),
+        semanal: situacaoSemanal(s.semanal, hoje, v.created_at, folga),
+        diaria: situacaoDiaria(s.diario, (decisoes ?? []).find((d) => d.veiculo_id === v.id)?.liberado ?? null, agora, folga),
         parado: (bloqueios ?? []).some((b) => b.veiculo_id === v.id),
       };
     });

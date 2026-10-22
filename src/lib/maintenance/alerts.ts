@@ -196,6 +196,8 @@ export function avaliarVeiculoPainel(
     ultimo_semanal_em?: string | null;
     ultimo_mensal_em?: string | null;
     liberacao_diaria?: boolean | null;
+    /** dias de folga do motorista responsável (0 = domingo … 6 = sábado) */
+    motorista_dias_folga?: readonly number[] | null;
   },
   hoje: string = toISODate(),
   agora: Date | string | number = new Date(),
@@ -205,8 +207,8 @@ export function avaliarVeiculoPainel(
     hoje,
   );
   const feitos = situacaoDaView(v, hoje);
-  const semanal = situacaoSemanal(feitos.semanal, hoje, v.created_at);
-  const diaria = situacaoDiaria(feitos.diario, v.liberacao_diaria, agora);
+  const semanal = situacaoSemanal(feitos.semanal, hoje, v.created_at, v.motorista_dias_folga);
+  const diaria = situacaoDiaria(feitos.diario, v.liberacao_diaria, agora, v.motorista_dias_folga);
   const saude = avaliarSaudeVeiculo({
     ultimoChecklistStatus: v.ultimo_checklist_status,
     ultimoChecklistEm: v.ultimo_checklist_em,

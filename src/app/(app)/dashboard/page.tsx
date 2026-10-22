@@ -112,7 +112,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const manutencao = conta('manutencao');
   // parados por avaria aguardam conserto: ficam fora da cobrança (o semanal atrasado continua cobrado)
   const operando = veiculos.filter((v) => v.bloqueio !== 'avaria');
-  const resumo = resumoCobranca(operando, new Map(operando.map((v) => [v.id, situacaoDaView(v, hoje)])));
+  // motorista de folga (hoje, no diário; sábado e domingo, no semanal) não gera pendência
+  const resumo = resumoCobranca(
+    operando,
+    new Map(operando.map((v) => [v.id, situacaoDaView(v, hoje)])),
+    (v, tipo) => (tipo === 'diario' && v.diaria === 'folga') || (tipo === 'semanal' && v.semanal === 'folga'),
+  );
   const diarioADecidir = operando.filter((v) => v.diaria === 'decidir').length;
   const semanalAtrasado = operando.filter((v) => v.semanal === 'atrasado').length;
 

@@ -10,6 +10,7 @@ import { EmptyState, PageHeader } from '@/components/ui/page-header';
 import { MotoristaStatusBadge } from '@/components/ui/status-badges';
 import { calcularConsumo, detectarConsumoAnormal } from '@/lib/abastecimento/consumo';
 import { requireSession } from '@/lib/auth';
+import { descreverFolga } from '@/lib/checklist/cobranca';
 import { toISODate } from '@/lib/dates';
 import { formatFilial, formatKm } from '@/lib/format';
 import { signedUrlMap } from '@/lib/storage';
@@ -47,7 +48,13 @@ export default async function MotoristaPage({ params }: { params: Promise<{ id: 
     <div className="flex flex-col gap-6">
       <PageHeader
         title={m.nome}
-        description={[m.cpf ? `CPF ${formatCpf(m.cpf)}` : null, m.filiais ? formatFilial(m.filiais) : null].filter(Boolean).join(' · ')}
+        description={[
+          m.cpf ? `CPF ${formatCpf(m.cpf)}` : null,
+          m.filiais ? formatFilial(m.filiais) : null,
+          m.dias_folga.length ? `Folga: ${descreverFolga(m.dias_folga)}` : null,
+        ]
+          .filter(Boolean)
+          .join(' · ')}
         actions={
           <>
             {m.whatsapp ? (

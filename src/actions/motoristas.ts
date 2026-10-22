@@ -20,6 +20,7 @@ export async function salvarMotorista(_prev: ActionState, formData: FormData): P
   const { id, filial_id: requestedFilial, cnh_frente_path, cnh_verso_path, ...dados } = parsed.data;
   const values = {
     ...dados,
+    // dias_folga já vem ordenado e sem repetição (zod); vazio = trabalha todos os dias
     // opcionais na fase de testes (ver lib/motoristas/obrigatorios): vazio grava null
     cpf: dados.cpf ?? null,
     whatsapp: dados.whatsapp ?? null,
