@@ -3,6 +3,7 @@
 import { useId, useRef, useState } from 'react';
 import { Camera, FileText, ImagePlus, Loader2, RefreshCw, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { CameraNaTela, cameraNaTelaDisponivel } from '@/components/ui/camera-na-tela';
 import { compressImage, formatBytes } from '@/lib/image/compress';
 import { digitalizarCupom } from '@/lib/image/digitalizar';
 import type { BucketName } from '@/lib/storage';
@@ -75,6 +76,17 @@ export function FileUpload({
   const [fileInfo, setFileInfo] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [cameraAberta, setCameraAberta] = useState(false);
+
+  /**
+   * Com `capture`, a foto sai de uma câmera DENTRO da página: o app de câmera do celular deixava o
+   * sistema em segundo plano e, em aparelhos com pouca memória (Redmi 14C), o Android encerrava o
+   * app/navegador e a foto se perdia na volta. Sem câmera na página, usa o app de câmera como antes.
+   */
+  function escolher() {
+    if (capture && cameraNaTelaDisponivel()) setCameraAberta(true);
+    else inputRef.current?.click();
+  }
 
   async function handleFile(file: File) {
     if (!pasta) {
@@ -173,6 +185,23 @@ export function FileUpload({
         }}
       />
 
+      {cameraAberta ? (
+        <CameraNaTela
+          titulo={label}
+          resolucao={digitalizar ? 'alta' : 'normal'}
+          dica={digitalizar ? 'Enquadre o cupom inteiro, de perto e sem reflexo.' : undefined}
+          onFechar={() => setCameraAberta(false)}
+          onFoto={(foto) => {
+            setCameraAberta(false);
+            void handleFile(foto);
+          }}
+          onUsarAppDeCamera={() => {
+            setCameraAberta(false);
+            inputRef.current?.click();
+          }}
+        />
+      ) : null}
+
       <div className={cn('flex items-center gap-3 rounded-2xl border border-dashed border-border bg-raised/40 p-3', error && 'border-destructive')}>
         <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-muted-foreground">
           {busy ? (
@@ -208,7 +237,7 @@ export function FileUpload({
         </div>
 
         <div className="flex shrink-0 gap-1">
-          <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => inputRef.current?.click()}>
+          <Button type="button" variant="outline" size="sm" disabled={busy} onClick={escolher}>
             {path ? <RefreshCw /> : capture ? <Camera /> : <ImagePlus />}
             {path ? 'Trocar' : 'Enviar'}
           </Button>

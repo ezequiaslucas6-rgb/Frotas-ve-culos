@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { PageHeader } from '@/components/ui/page-header';
 import { requireSession } from '@/lib/auth';
+import { dadosPessoaisObrigatorios } from '@/lib/motoristas/obrigatorios';
 import { signedUrlMap } from '@/lib/storage';
 import { MotoristaForm } from '../../motorista-form';
 
@@ -22,6 +23,7 @@ export default async function EditarMotoristaPage({ params }: { params: Promise<
         motorista={motorista}
         cnhFrenteUrl={motorista.cnh_frente_url ? urls[motorista.cnh_frente_url] : null}
         cnhVersoUrl={motorista.cnh_verso_url ? urls[motorista.cnh_verso_url] : null}
+        obrigatorios={dadosPessoaisObrigatorios()}
       />
     </div>
   );

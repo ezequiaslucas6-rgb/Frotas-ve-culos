@@ -11,6 +11,8 @@ import { Input } from '@/components/ui/input';
 import { EmptyState, PageHeader } from '@/components/ui/page-header';
 import { CnhBadge, MotoristaStatusBadge } from '@/components/ui/status-badges';
 import { requireSession } from '@/lib/auth';
+import { BotaoFolga } from '@/components/motoristas/botao-folga';
+import { descreverFolga, folgaVigente, sextaDaSemana } from '@/lib/checklist/cobranca';
 import { toISODate } from '@/lib/dates';
 import { formatFilial } from '@/lib/format';
 import { situacaoCnh } from '@/lib/motoristas/cnh';
@@ -82,9 +84,14 @@ export default async function MotoristasPage({ searchParams }: { searchParams: P
                     {m.nome} <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
                   </p>
                   <p className="truncate text-xs text-muted-foreground">
-                    CPF {formatCpf(m.cpf)}
-                    {m.cnh_categoria ? ` · CNH ${m.cnh_categoria}` : ''}
-                    {isAdmin && m.filiais ? ` · ${formatFilial(m.filiais)}` : ''}
+                    {[
+                      m.cpf ? `CPF ${formatCpf(m.cpf)}` : 'CPF não informado',
+                      m.cnh_categoria ? `CNH ${m.cnh_categoria}` : null,
+                      folgaVigente(m.folgas_fim_semana, hoje) ? `Folga: ${descreverFolga(folgaVigente(m.folgas_fim_semana, hoje)!)}` : null,
+                      isAdmin && m.filiais ? formatFilial(m.filiais) : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
                   </p>
                 </Link>
                 <MotoristaStatusBadge status={m.status} />
@@ -99,15 +106,18 @@ export default async function MotoristasPage({ searchParams }: { searchParams: P
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 {/* Contato rápido: abre a conversa no WhatsApp (app nativo no celular, Web no desktop) */}
-                <a
-                  href={whatsappLink(m.whatsapp, `Olá ${m.nome.split(' ')[0]}, tudo bem?`)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={`Chamar ${m.nome} no WhatsApp`}
-                  className={buttonVariants({ variant: 'success', size: 'sm' })}
-                >
-                  <MessageCircle /> {formatWhatsapp(m.whatsapp)}
-                </a>
+                {m.whatsapp ? (
+                  <a
+                    href={whatsappLink(m.whatsapp, `Olá ${m.nome.split(' ')[0]}, tudo bem?`)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`Chamar ${m.nome} no WhatsApp`}
+                    className={buttonVariants({ variant: 'success', size: 'sm' })}
+                  >
+                    <MessageCircle /> {formatWhatsapp(m.whatsapp)}
+                  </a>
+                ) : null}
+                <BotaoFolga motoristaId={m.id} ativaInicial={m.folgas_fim_semana.includes(sextaDaSemana(hoje))} periodo={descreverFolga(sextaDaSemana(hoje))} size="sm" />
                 <span className="flex-1" />
                 <Link href={`/motoristas/${m.id}/editar`} className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
                   <Pencil /> Editar

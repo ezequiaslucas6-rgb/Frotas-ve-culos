@@ -126,7 +126,7 @@ export default async function ChecklistPage({ params }: { params: Promise<{ id: 
               <User className="size-4" /> Motorista
             </p>
             <p className="font-medium">{checklist.motoristas?.nome ?? '—'}</p>
-            {checklist.motoristas ? (
+            {checklist.motoristas?.whatsapp ? (
               <a
                 href={whatsappLink(checklist.motoristas.whatsapp)}
                 target="_blank"

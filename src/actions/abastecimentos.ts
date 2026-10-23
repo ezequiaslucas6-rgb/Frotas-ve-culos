@@ -5,13 +5,40 @@ import { revalidatePath } from 'next/cache';
 import { fail, ok, type ActionState } from '@/lib/action-state';
 import { requireAdmin, requireSession } from '@/lib/auth';
 import { arred2, registroLeituraSchema } from '@/lib/abastecimento/cupom';
+import { kmAbaixoDaReferencia, referenciaDoKm, type UltimoAbastecimento } from '@/lib/abastecimento/referencia';
 import { toISODate } from '@/lib/dates';
 import { friendlyDbError } from '@/lib/db-errors';
-import { formatKm } from '@/lib/format';
+import { formatDateISO, formatKm } from '@/lib/format';
 import { sincronizarAlertas } from '@/lib/maintenance/sync';
 import { abastecimentoSchema, flattenErrors, formDataToObject } from '@/lib/schemas';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Enums } from '@/types/database';
+
+/**
+ * Último abastecimento do veículo (data e KM), de TODOS os motoristas: o motorista só enxerga os
+ * próprios lançamentos, mas a referência do hodômetro é a do veículo. `ate`: só até esta data.
+ * Lido com o cliente do servidor (só o KM e a data, de um veículo que o chamador já enxerga).
+ */
+async function ultimoAbastecimentoDe(veiculoId: string, ate?: string): Promise<UltimoAbastecimento | null> {
+  let consulta = createAdminClient().from('abastecimentos').select('km, data_abastecimento').eq('veiculo_id', veiculoId);
+  if (ate) consulta = consulta.lte('data_abastecimento', ate);
+  const { data } = await consulta
+    .order('data_abastecimento', { ascending: false })
+    .order('km', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data ? { km: data.km, data: data.data_abastecimento } : null;
+}
+
+/** Para o formulário: o último abastecimento do veículo escolhido (referência do KM). */
+export async function ultimoAbastecimentoDoVeiculo(veiculoId: string): Promise<{ ok: boolean; ultimo: UltimoAbastecimento | null }> {
+  const session = await requireSession({ motorista: true });
+  if (!/^[0-9a-f-]{36}$/i.test(veiculoId)) return { ok: false, ultimo: null };
+  // a RLS decide se este veículo é visível para quem pergunta
+  const { data: veiculo } = await session.supabase.from('veiculos').select('id').eq('id', veiculoId).maybeSingle();
+  if (!veiculo) return { ok: false, ultimo: null };
+  return { ok: true, ultimo: await ultimoAbastecimentoDe(veiculoId) };
+}
 
 /**
  * Lançamento de abastecimento. Pode vir do próprio motorista (só nos veículos em que é
@@ -41,10 +68,17 @@ export async function registrarAbastecimento(_prev: ActionState, formData: FormD
     motoristaId = motoristaEscolhido ?? veiculo.motorista_id;
   }
 
-  // Hodômetro menor que o do veículo só é aceito em lançamento retroativo (dia anterior).
-  if (a.km < veiculo.km_atual && a.data_abastecimento >= toISODate()) {
+  // O hodômetro é conferido com o ÚLTIMO ABASTECIMENTO do veículo (não com o KM do veículo, que também
+  // sobe com checklists). Menor só é aceito em lançamento retroativo (dia anterior).
+  const ultimo = await ultimoAbastecimentoDe(veiculo.id, a.data_abastecimento);
+  const referencia = referenciaDoKm(ultimo, veiculo.km_atual);
+  if (kmAbaixoDaReferencia(a.km, a.data_abastecimento, toISODate(), referencia)) {
     return fail('Confira o hodômetro.', {
-      km: [`O KM é menor que o último registrado para o veículo (${formatKm(veiculo.km_atual)}).`],
+      km: [
+        referencia.origem === 'abastecimento'
+          ? `O KM é menor que o do último abastecimento (${formatKm(referencia.km)}, em ${formatDateISO(referencia.data)}).`
+          : `O KM é menor que o último registrado para o veículo (${formatKm(referencia.km)}).`,
+      ],
     });
   }
   if (comprovante_path && !comprovante_path.startsWith(`${veiculo.filial_id}/${veiculo.id}/`)) {

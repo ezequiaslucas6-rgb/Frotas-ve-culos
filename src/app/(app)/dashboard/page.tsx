@@ -22,6 +22,7 @@ import { formatBRL, formatDateISO, formatDateTime, formatFilial, formatKm } from
 import { avaliarVeiculoPainel } from '@/lib/maintenance/alerts';
 import { descreverAlerta } from '@/lib/maintenance/describe';
 import { CNH_AVISO_DIAS, situacaoCnh } from '@/lib/motoristas/cnh';
+import { dadosPessoaisObrigatorios } from '@/lib/motoristas/obrigatorios';
 import { resolveFilialFilter, type SearchParams } from '@/lib/pagination';
 import { cn } from '@/lib/utils';
 import { formatPlaca } from '@/lib/validators/documentos';
@@ -63,12 +64,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     .from('abastecimentos')
     .select('id, veiculo_id, km, litros, tanque_cheio, combustivel, valor_total, filial_id, data_abastecimento')
     .gte('data_abastecimento', `${meses[0]}-01`);
-  // CNH vencida, vencendo em até 30 dias ou sem validade (motoristas em atividade)
+  // CNH vencida, vencendo em até 30 dias ou sem validade (motoristas em atividade).
+  // Na fase de testes (CNH opcional) a falta da validade não é aviso.
+  const limiteCnh = addDays(hoje, CNH_AVISO_DIAS);
   let cnhQ = supabase
     .from('motoristas')
     .select('id, nome, cnh_validade, filial_id')
     .neq('status', 'inativo')
-    .or(`cnh_validade.is.null,cnh_validade.lte.${addDays(hoje, CNH_AVISO_DIAS)}`)
+    .or(dadosPessoaisObrigatorios() ? `cnh_validade.is.null,cnh_validade.lte.${limiteCnh}` : `cnh_validade.lte.${limiteCnh}`)
     .order('cnh_validade', { ascending: true, nullsFirst: false })
     .limit(50);
   let ultimosQ = supabase
@@ -109,7 +112,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const manutencao = conta('manutencao');
   // parados por avaria aguardam conserto: ficam fora da cobrança (o semanal atrasado continua cobrado)
   const operando = veiculos.filter((v) => v.bloqueio !== 'avaria');
-  const resumo = resumoCobranca(operando, new Map(operando.map((v) => [v.id, situacaoDaView(v, hoje)])));
+  // motorista de folga (hoje, no diário; sábado e domingo, no semanal) não gera pendência
+  const resumo = resumoCobranca(
+    operando,
+    new Map(operando.map((v) => [v.id, situacaoDaView(v, hoje)])),
+    (v, tipo) => (tipo === 'diario' && v.diaria === 'folga') || (tipo === 'semanal' && v.semanal === 'folga'),
+  );
   const diarioADecidir = operando.filter((v) => v.diaria === 'decidir').length;
   const semanalAtrasado = operando.filter((v) => v.semanal === 'atrasado').length;
 

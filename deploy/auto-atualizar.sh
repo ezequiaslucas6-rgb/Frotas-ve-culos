@@ -19,7 +19,9 @@ PENDENTE="$DIR/ATUALIZACAO_PENDENTE.txt"
 registrar() { printf '%s  %s\n' "$(date '+%d/%m/%Y %H:%M')" "$*" >>"$LOG"; }
 
 # uma atualização por vez (inclusive com o instalador rodando à mão)
-exec 9>/tmp/frotas-atualizacao.lock
+# só leitura (ver instalar-vps.sh): a trava pode ter sido criada por outro usuário
+[[ -e /tmp/frotas-atualizacao.lock ]] || (umask 000 && : >/tmp/frotas-atualizacao.lock) 2>/dev/null || true
+exec 9</tmp/frotas-atualizacao.lock
 flock -n 9 || exit 0
 
 # histórico pequeno

@@ -13,3 +13,6 @@ npm-debug.log*
 # VPS: histórico e aviso da atualização automática (deploy/auto-atualizar.sh)
 atualizacao.log
 ATUALIZACAO_PENDENTE.txt
+
+# Firebase (notificações do APK): vem do secret GOOGLE_SERVICES_JSON_BASE64 no build
+android/app/google-services.json

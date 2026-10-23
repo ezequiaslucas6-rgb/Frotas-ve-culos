@@ -2,3 +2,7 @@
 # O horário segue o fuso do servidor (confira com: timedatectl). Em UTC, "0 12" = 09:00 de Brasília.
 # Troque o domínio e use o mesmo CRON_SECRET do arquivo .env.
 0 9 * * * curl -fsS -m 60 -H "Authorization: Bearer COLE_O_CRON_SECRET" https://frotas.SEUDOMINIO.com.br/api/cron/alertas >/dev/null
+
+# Lembretes do checklist (notificações 08:00 e 08:30, horário de Pimenta Bueno): TODO minuto.
+# O servidor decide o horário certo sozinho (não depende do fuso da VPS) e envia uma vez por dia.
+* * * * * curl -fsS -m 50 -H "Authorization: Bearer COLE_O_CRON_SECRET" http://127.0.0.1:3010/api/cron/lembretes >/dev/null

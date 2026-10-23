@@ -5,7 +5,10 @@ import { revalidatePath } from 'next/cache';
 import { fail, ok, type ActionState } from '@/lib/action-state';
 import { esquecerPerfil, requireAdmin, requireSession, resolveFilialId } from '@/lib/auth';
 import { friendlyDbError } from '@/lib/db-errors';
-import { acessoMotoristaSchema, flattenErrors, formDataToObject, motoristaSchema } from '@/lib/schemas';
+import { addDays, toISODate } from '@/lib/dates';
+import { descreverFolga, sextaDaSemana } from '@/lib/checklist/cobranca';
+import { dadosPessoaisObrigatorios } from '@/lib/motoristas/obrigatorios';
+import { acessoMotoristaSchema, flattenErrors, formDataToObject, motoristaSchemaPara } from '@/lib/schemas';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 /** Imagens da CNH vivem em <filial_id>/... no bucket "motoristas". */
@@ -13,12 +16,18 @@ const pathBelongsTo = (path: string | undefined, filialId: string) => !path || p
 
 export async function salvarMotorista(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const session = await requireSession();
-  const parsed = motoristaSchema.safeParse(formDataToObject(formData));
+  const parsed = motoristaSchemaPara(dadosPessoaisObrigatorios()).safeParse(formDataToObject(formData));
   if (!parsed.success) return fail('Corrija os campos destacados.', flattenErrors(parsed.error));
 
   const { id, filial_id: requestedFilial, cnh_frente_path, cnh_verso_path, ...dados } = parsed.data;
   const values = {
     ...dados,
+    // opcionais na fase de testes (ver lib/motoristas/obrigatorios): vazio grava null
+    cpf: dados.cpf ?? null,
+    whatsapp: dados.whatsapp ?? null,
+    cnh: dados.cnh ?? null,
+    cnh_categoria: dados.cnh_categoria ?? null,
+    cnh_validade: dados.cnh_validade ?? null,
     cnh_primeira_habilitacao: dados.cnh_primeira_habilitacao ?? null,
     cnh_emissao: dados.cnh_emissao ?? null,
     cnh_uf: dados.cnh_uf ?? null,
@@ -182,4 +191,37 @@ export async function removerAcessoMotorista(_prev: ActionState, formData: FormD
   revalidatePath(`/motoristas/${m.id}`);
   revalidatePath('/motoristas');
   return ok('Acesso removido.');
+}
+
+/** Quanto tempo a folga marcada fica guardada (o semanal do fim de semana de folga fica dispensado até o próximo ciclo). */
+const GUARDAR_FOLGAS_DIAS = 28;
+
+/**
+ * "Folga da semana": liga ou desliga a folga do motorista na sexta, no sábado e no domingo da
+ * semana atual (semana de segunda a domingo). Vale só para essa semana: na segunda o motorista
+ * volta sozinho, sem desmarcar. Só supervisor da filial ou admin (a RLS barra o resto).
+ */
+export async function alternarFolgaDaSemana(motoristaId: string): Promise<{ ok: boolean; ativa?: boolean; periodo?: string; mensagem?: string }> {
+  const session = await requireSession();
+  if (!/^[0-9a-f-]{36}$/i.test(motoristaId)) return { ok: false, mensagem: 'Motorista inválido.' };
+  const { data: m } = await session.supabase.from('motoristas').select('id, folgas_fim_semana').eq('id', motoristaId).maybeSingle();
+  if (!m) return { ok: false, mensagem: 'Motorista não encontrado.' };
+
+  const hoje = toISODate();
+  const sexta = sextaDaSemana(hoje);
+  const estavaAtiva = m.folgas_fim_semana.includes(sexta);
+  // guarda só as folgas recentes (as de semanas anteriores ainda dispensam o semanal daquele fim de semana)
+  const recentes = m.folgas_fim_semana.filter((d) => d !== sexta && d >= addDays(hoje, -GUARDAR_FOLGAS_DIAS));
+  const folgas = (estavaAtiva ? recentes : [...recentes, sexta]).sort();
+
+  const { data: atualizado, error } = await session.supabase
+    .from('motoristas')
+    .update({ folgas_fim_semana: folgas })
+    .eq('id', motoristaId)
+    .select('id');
+  if (error) return { ok: false, mensagem: friendlyDbError(error) };
+  if (!atualizado?.length) return { ok: false, mensagem: 'Sem permissão para alterar a folga deste motorista.' };
+
+  for (const caminho of ['/motoristas', `/motoristas/${motoristaId}`, '/dashboard', '/checklists/hoje', '/veiculos']) revalidatePath(caminho);
+  return { ok: true, ativa: !estavaAtiva, periodo: descreverFolga(sexta) };
 }

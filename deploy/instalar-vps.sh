@@ -40,7 +40,10 @@ fi
 
 # uma atualização por vez (a automática, deploy/auto-atualizar.sh, usa a mesma trava e avisa com FROTAS_TRAVA)
 if [[ -z ${FROTAS_TRAVA:-} ]]; then
-  exec 9>/tmp/frotas-atualizacao.lock
+  # aberta só para leitura: a trava criada pela automática (root) não pode ser aberta para escrita
+  # por outro usuário em /tmp (fs.protected_regular), mas o flock funciona do mesmo jeito
+  [[ -e /tmp/frotas-atualizacao.lock ]] || (umask 000 && : >/tmp/frotas-atualizacao.lock) 2>/dev/null || true
+  exec 9</tmp/frotas-atualizacao.lock
   flock -n 9 || falha "Já há uma atualização em andamento (a automática). Aguarde alguns minutos e rode de novo."
 fi
 
@@ -156,6 +159,39 @@ if grep -qE '^GEMINI_API_KEY=.+' .env; then
   ok "Leitura automática do cupom: ligada"
 else
   aviso "Leitura automática do cupom desligada: coloque a chave do Gemini em GEMINI_API_KEY no $DIR/.env e rode de novo"
+fi
+
+# notificações no navegador (PC/Android): chaves VAPID geradas uma vez e guardadas no .env
+if ! grep -qE '^VAPID_PRIVATE_KEY=.+' .env; then
+  CHAVES="$($DOCKER run --rm node:22-alpine node -e "
+    const c=require('crypto');
+    const k=c.generateKeyPairSync('ec',{namedCurve:'prime256v1'}).privateKey.export({format:'jwk'});
+    const pub=Buffer.concat([Buffer.from([4]),Buffer.from(k.x,'base64url'),Buffer.from(k.y,'base64url')]).toString('base64url');
+    console.log(pub+' '+k.d)" 2>/dev/null || true)"
+  if [[ $CHAVES =~ ^[A-Za-z0-9_-]{87}\ [A-Za-z0-9_-]{43}$ ]]; then
+    sed -i '/^VAPID_PUBLIC_KEY=/d; /^VAPID_PRIVATE_KEY=/d' .env
+    cat >>.env <<ENVFIM
+
+# Notificações no navegador (Web Push). Geradas pelo instalador: não troque (quem já ativou teria de ativar de novo).
+VAPID_PUBLIC_KEY=${CHAVES%% *}
+VAPID_PRIVATE_KEY=${CHAVES##* }
+VAPID_SUBJECT=mailto:admin@frotas.local
+ENVFIM
+    ok "Notificações no navegador: chaves geradas (VAPID)"
+  else
+    aviso "Não consegui gerar as chaves das notificações do navegador (docker/rede). Rode o instalador de novo."
+  fi
+fi
+grep -qE '^FCM_CONTA_SERVICO_BASE64=' .env || cat >>.env <<'ENVFIM'
+
+# Notificações no APK (Firebase, gratuito): cole aqui a conta de serviço em base64.
+# Passo a passo no README ("Notificações"). Sem ela, o APK usa só o alarme do próprio celular (menos pontual).
+FCM_CONTA_SERVICO_BASE64=
+ENVFIM
+if grep -qE '^FCM_CONTA_SERVICO_BASE64=.+' .env; then
+  ok "Notificações no APK (Firebase): ligadas"
+else
+  aviso "Notificações no APK por Firebase desligadas: veja \"Notificações\" no README (o APK usa só o alarme do celular)."
 fi
 
 # ----------------------------------------------------------------------------- memória p/ o build
@@ -347,6 +383,13 @@ if curl -fsS -m 60 -H "Authorization: Bearer $CRON_SECRET" "http://127.0.0.1:$PO
 else
   aviso "Teste do cron falhou: confira SUPABASE_SERVICE_ROLE_KEY e a URL no .env (depois: docker compose up -d --build)."
 fi
+
+# ----------------------------------------------------------------------------- lembretes (notificações)
+msg "Lembretes das 08:00 e 08:30 (horário de Pimenta Bueno)"
+# todo minuto: o servidor decide pelo horário de Pimenta Bueno (não depende do fuso da VPS) e envia uma vez por dia
+LINHA_LEMBRETES="* * * * * curl -fsS -m 50 -H 'Authorization: Bearer $CRON_SECRET' http://127.0.0.1:$PORTA/api/cron/lembretes >/dev/null 2>&1 # frotas-lembretes"
+(crontab -l 2>/dev/null | grep -v 'frotas-lembretes' || true; echo "$LINHA_LEMBRETES") | crontab -
+ok "Agendador ligado: as notificações saem no minuto exato (08:00 motorista, 08:30 supervisor/admin)"
 
 # ----------------------------------------------------------------------------- atualização automática
 msg "Atualização automática"

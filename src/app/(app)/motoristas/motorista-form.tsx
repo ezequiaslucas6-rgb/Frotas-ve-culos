@@ -24,9 +24,11 @@ interface MotoristaFormProps {
   motorista?: Tables<'motoristas'>;
   cnhFrenteUrl?: string | null;
   cnhVersoUrl?: string | null;
+  /** CPF, WhatsApp e CNH obrigatórios (desligado na fase de testes: lib/motoristas/obrigatorios) */
+  obrigatorios: boolean;
 }
 
-export function MotoristaForm({ filiais, filialFixaId, motorista, cnhFrenteUrl, cnhVersoUrl }: MotoristaFormProps) {
+export function MotoristaForm({ filiais, filialFixaId, motorista, cnhFrenteUrl, cnhVersoUrl, obrigatorios }: MotoristaFormProps) {
   const { state, pending, onSubmit, fieldError } = useServerForm(salvarMotorista);
   const editing = Boolean(motorista);
   const [filialId, setFilialId] = useState<string>(motorista?.filial_id ?? filialFixaId ?? '');
@@ -40,6 +42,9 @@ export function MotoristaForm({ filiais, filialFixaId, motorista, cnhFrenteUrl, 
       <Card>
         <CardHeader>
           <CardTitle>Dados pessoais</CardTitle>
+          {obrigatorios ? null : (
+            <CardDescription>Fase de testes: só nome e e-mail são obrigatórios. CPF, WhatsApp e CNH podem ficar em branco ou ser fictícios.</CardDescription>
+          )}
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {filiais && !editing ? (
@@ -59,8 +64,8 @@ export function MotoristaForm({ filiais, filialFixaId, motorista, cnhFrenteUrl, 
           <Field label="Nome completo" htmlFor="nome" required error={fieldError('nome')} className="sm:col-span-2">
             <Input id="nome" name="nome" defaultValue={motorista?.nome} autoComplete="name" required aria-invalid={!!fieldError('nome')} />
           </Field>
-          <Field label="CPF" htmlFor="cpf" required error={fieldError('cpf')}>
-            <MaskedInput id="cpf" name="cpf" mask="cpf" defaultValue={motorista?.cpf} required aria-invalid={!!fieldError('cpf')} />
+          <Field label="CPF" htmlFor="cpf" required={obrigatorios} error={fieldError('cpf')}>
+            <MaskedInput id="cpf" name="cpf" mask="cpf" defaultValue={motorista?.cpf ?? undefined} required={obrigatorios} aria-invalid={!!fieldError('cpf')} />
           </Field>
           <Field label="Status" htmlFor="status" error={fieldError('status')}>
             <Select id="status" name="status" defaultValue={motorista?.status ?? 'ativo'}>
@@ -79,8 +84,15 @@ export function MotoristaForm({ filiais, filialFixaId, motorista, cnhFrenteUrl, 
           >
             <Input id="email" name="email" type="email" inputMode="email" defaultValue={motorista?.email} required aria-invalid={!!fieldError('email')} />
           </Field>
-          <Field label="WhatsApp" htmlFor="whatsapp" required error={fieldError('whatsapp')} hint="Com DDD">
-            <MaskedInput id="whatsapp" name="whatsapp" mask="whatsapp" defaultValue={motorista?.whatsapp} required aria-invalid={!!fieldError('whatsapp')} />
+          <Field label="WhatsApp" htmlFor="whatsapp" required={obrigatorios} error={fieldError('whatsapp')} hint="Com DDD">
+            <MaskedInput
+              id="whatsapp"
+              name="whatsapp"
+              mask="whatsapp"
+              defaultValue={motorista?.whatsapp ?? undefined}
+              required={obrigatorios}
+              aria-invalid={!!fieldError('whatsapp')}
+            />
           </Field>
         </CardContent>
       </Card>
@@ -91,13 +103,13 @@ export function MotoristaForm({ filiais, filialFixaId, motorista, cnhFrenteUrl, 
           <CardDescription>Dados do documento e fotos de frente e verso (ou o PDF da CNH digital).</CardDescription>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Nº de registro" htmlFor="cnh" required error={fieldError('cnh')} hint="11 dígitos">
-            <MaskedInput id="cnh" name="cnh" mask="cnh" defaultValue={motorista?.cnh} required aria-invalid={!!fieldError('cnh')} />
+          <Field label="Nº de registro" htmlFor="cnh" required={obrigatorios} error={fieldError('cnh')} hint="11 dígitos">
+            <MaskedInput id="cnh" name="cnh" mask="cnh" defaultValue={motorista?.cnh ?? undefined} required={obrigatorios} aria-invalid={!!fieldError('cnh')} />
           </Field>
-          <Field label="Categoria" htmlFor="cnh_categoria" required error={fieldError('cnh_categoria')}>
+          <Field label="Categoria" htmlFor="cnh_categoria" required={obrigatorios} error={fieldError('cnh_categoria')}>
             <Select id="cnh_categoria" name="cnh_categoria" defaultValue={motorista?.cnh_categoria ?? ''} aria-invalid={!!fieldError('cnh_categoria')}>
-              <option value="" disabled>
-                Selecione…
+              <option value="" disabled={obrigatorios}>
+                {obrigatorios ? 'Selecione…' : 'Não informada'}
               </option>
               {CNH_CATEGORIAS.map((c) => (
                 <option key={c} value={c}>
@@ -106,7 +118,7 @@ export function MotoristaForm({ filiais, filialFixaId, motorista, cnhFrenteUrl, 
               ))}
             </Select>
           </Field>
-          <Field label="Validade" htmlFor="cnh_validade" required error={fieldError('cnh_validade')}>
+          <Field label="Validade" htmlFor="cnh_validade" required={obrigatorios} error={fieldError('cnh_validade')}>
             <Input id="cnh_validade" name="cnh_validade" type="date" defaultValue={motorista?.cnh_validade ?? ''} aria-invalid={!!fieldError('cnh_validade')} />
           </Field>
           <Field label="Data de emissão" htmlFor="cnh_emissao" error={fieldError('cnh_emissao')}>
