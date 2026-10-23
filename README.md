@@ -368,6 +368,10 @@ pessoa tiver negado de vez, o app abre as configurações dele para liberar a c�
 final é uma RPC atômica (`salvar_checklist`) que confere as fotos com o modelo do tipo e grava checklist + fotos + KM
 numa transação.
 
+**Mesma câmera no cupom e no veículo.** A foto do **cupom de abastecimento** (em resolução maior, até 2600 px, por causa
+da letra miúda da nota, com a dica *Enquadre o cupom inteiro*) e a **foto geral do veículo** também abrem a câmera
+dentro da tela, não a do celular. Se ela não abrir, o botão *Usar o app de câmera* continua disponível.
+
 **Rotina (horário de Pimenta Bueno/RO).**
 - **Diário — não é obrigatório.** O motorista faz até as **08:30**. Depois disso, o supervisor abre **Checklist de
   hoje** (menu, painel ou a notificação das 08:30), vê quem fez e decide, para cada veículo sem checklist, **Liberar**

@@ -6,8 +6,15 @@ import { Camera, Download, Flashlight, FlashlightOff, Loader2, X } from 'lucide-
 import { Button, buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
-/** Maior lado da foto tirada aqui (o checklist ainda reduz para 1600 px). */
-const MAIOR_LADO = 1920;
+/**
+ * Resolução da foto: "normal" (checklist, foto do veículo) até 1920 px; "alta" (cupom e notas, de
+ * letra miúda) pede ao aparelho o máximo que ele entrega (até ~3200 px) e entrega até 2600 px.
+ */
+const RESOLUCAO = {
+  normal: { pedida: { width: 1920, height: 1440 }, maiorLado: 1920, qualidade: 0.9 },
+  alta: { pedida: { width: 3200, height: 2400 }, maiorLado: 2600, qualidade: 0.92 },
+} as const;
+export type ResolucaoCamera = keyof typeof RESOLUCAO;
 
 /** Primeira versão do APK que libera a câmera para a página (permissão CAMERA + onPermissionRequest). */
 const APK_COM_CAMERA = 10;
@@ -43,11 +50,16 @@ type Estado = { fase: 'abrindo' } | { fase: 'pronta' } | { fase: 'tirando' } | {
  */
 export function CameraNaTela({
   titulo,
+  dica,
+  resolucao = 'normal',
   onFoto,
   onFechar,
   onUsarAppDeCamera,
 }: {
   titulo: string;
+  /** orientação mostrada sobre a imagem (ex.: "Enquadre o cupom inteiro") */
+  dica?: string;
+  resolucao?: ResolucaoCamera;
   onFoto: (file: File) => void;
   onFechar: () => void;
   /** abre o app de câmera do celular (o caminho antigo); chamado dentro do toque */
@@ -68,7 +80,11 @@ export function CameraNaTela({
     navigator.mediaDevices
       .getUserMedia({
         audio: false,
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: MAIOR_LADO }, height: { ideal: 1440 } },
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: RESOLUCAO[resolucao].pedida.width },
+          height: { ideal: RESOLUCAO[resolucao].pedida.height },
+        },
       })
       .then(async (stream) => {
         if (cancelado) return stream.getTracks().forEach((t) => t.stop());
@@ -102,7 +118,7 @@ export function CameraNaTela({
       fluxo.current?.getTracks().forEach((t) => t.stop());
       fluxo.current = null;
     };
-  }, []);
+  }, [resolucao]);
 
   // trava a rolagem da página por baixo
   useEffect(() => {
@@ -128,12 +144,13 @@ export function CameraNaTela({
     const v = video.current;
     if (!v || !v.videoWidth || !v.videoHeight) return;
     setEstado({ fase: 'tirando' });
-    const escala = Math.min(1, MAIOR_LADO / Math.max(v.videoWidth, v.videoHeight));
+    const { maiorLado, qualidade } = RESOLUCAO[resolucao];
+    const escala = Math.min(1, maiorLado / Math.max(v.videoWidth, v.videoHeight));
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(v.videoWidth * escala);
     canvas.height = Math.round(v.videoHeight * escala);
     canvas.getContext('2d')?.drawImage(v, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', qualidade));
     if (!blob) {
       setEstado({ fase: 'erro', mensagem: 'Não foi possível tirar a foto. Use o app de câmera do celular.' });
       return;
@@ -157,6 +174,9 @@ export function CameraNaTela({
 
       <div className="relative flex min-h-0 flex-1 items-center justify-center">
         {/* escondido até a câmera abrir (o WebView mostra um "play" cinza no vídeo vazio) */}
+        {dica && estado.fase === 'pronta' ? (
+          <p className="absolute top-2 right-4 left-4 z-10 rounded-xl bg-black/60 px-3 py-2 text-center text-xs">{dica}</p>
+        ) : null}
         <video
           ref={video}
           playsInline

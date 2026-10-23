@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/input';
 import { SEVERIDADE_LABEL, type MarcadorAvaria, type Severidade } from '@/lib/checklist/etapas';
 import { cn } from '@/lib/utils';
-import { CameraNaTela, cameraNaTelaDisponivel } from './camera-na-tela';
+import { CameraNaTela, cameraNaTelaDisponivel } from '@/components/ui/camera-na-tela';
 import type { EtapaState } from './types';
 
 interface EtapaCapturaProps {
