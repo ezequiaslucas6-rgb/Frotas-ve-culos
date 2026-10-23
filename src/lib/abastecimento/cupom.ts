@@ -421,7 +421,7 @@ export function conferirKmCupom(kmCupom: number | null, kmVeiculo: number): { km
   if (kmCupom >= kmVeiculo && kmCupom <= kmVeiculo + KM_SALTO_CUPOM) return { km: kmCupom, aviso: null };
   return {
     km: null,
-    aviso: `KM no cupom (${kmFmt.format(kmCupom)}) não combina com o último registro do veículo (${kmFmt.format(kmVeiculo)}): digite o KM do hodômetro.`,
+    aviso: `KM no cupom (${kmFmt.format(kmCupom)}) não combina com o último abastecimento (${kmFmt.format(kmVeiculo)}): digite o KM do hodômetro.`,
   };
 }
 

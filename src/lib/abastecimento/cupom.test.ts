@@ -323,8 +323,8 @@ describe('KM do cupom', () => {
     expect(conferirKmCupom(212855, 212300)).toEqual({ km: 212855, aviso: null });
     const errado = conferirKmCupom(252855, 212300);
     expect(errado.km).toBeNull();
-    expect(errado.aviso).toMatch(/KM no cupom \(252\.855\) não combina com o último registro do veículo \(212\.300\)/);
-    expect(conferirKmCupom(212000, 212300).km).toBeNull(); // abaixo do último registro
+    expect(errado.aviso).toMatch(/KM no cupom \(252\.855\) não combina com o último abastecimento \(212\.300\)/);
+    expect(conferirKmCupom(212000, 212300).km).toBeNull(); // abaixo do último abastecimento
     expect(conferirKmCupom(null, 212300)).toEqual({ km: null, aviso: null });
   });
 });

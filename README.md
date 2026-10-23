@@ -235,10 +235,12 @@ Motorista com status *Inativo* perde o acesso na hora. *Remover acesso* apaga o 
 ## Abastecimentos
 
 Lançados pelo motorista (ou pelo supervisor): data, KM do hodômetro, combustível, litros, valor, tanque cheio/parcial,
-posto e **foto do cupom**. O KM do veículo é atualizado automaticamente (nunca regride) e o app recusa KM menor que o
-último registrado no mesmo dia. O **consumo (km/l)** usa o método tanque cheio a tanque cheio (parciais somam ao ciclo
-seguinte) e **só o KM digitado nos abastecimentos**: o KM do checklist nunca entra na conta (ele só serve de mínimo
-para o KM do abastecimento). Ex.: checklist com 100 km, 2 km até o posto, tanque cheio com 102 km: o ciclo vai do
+posto e **foto do cupom**. O KM do veículo é atualizado automaticamente (nunca regride). O **hodômetro do abastecimento é
+conferido com o ÚLTIMO ABASTECIMENTO do veículo** (a tela mostra *Último abastecimento: 124.500 km (12/10/2026)*), e não
+com o KM do checklist: o app recusa KM menor que o do último abastecimento no mesmo dia (retroativo é aceito) e avisa se
+a diferença passa de 3.000 km. Só um veículo **sem abastecimento anterior** parte do KM do veículo. O **consumo (km/l)**
+usa o método tanque cheio a tanque cheio (parciais somam ao ciclo seguinte) e **só o KM digitado nos abastecimentos**: o
+KM do checklist nunca entra na conta. Ex.: checklist com 100 km, 2 km até o posto, tanque cheio com 102 km: o ciclo vai do
 tanque cheio anterior até 102 km. O painel mostra o custo de **manutenção** e o de **combustível** em gráficos
 separados.
 
@@ -271,7 +273,7 @@ valor total, desconto, combustível, data e posto. A pessoa confere e registra.
   possível (números impressos duas vezes iguais, como o valor pago da DANFE, nunca são trocados). O campo corrigido
   aparece destacado (*corrigido · lido 45,35 L*) e o resumo pede *Corrigido: confira*. Se mais de um número pode
   estar errado, nada é adivinhado: a pessoa confere na foto.
-- **KM impresso** (digitado pelo frentista): só preenche o hodômetro se estiver entre o último KM do veículo e 3.000 km
+- **KM impresso** (digitado pelo frentista): só preenche o hodômetro se estiver entre o KM do último abastecimento e 3.000 km
   acima dele; fora disso, avisa e deixa para digitar (KM errado estragaria o consumo).
 - **Velocidade e modelos novos:** o modelo responde com o mínimo de "raciocínio" (mais rápido) e no formato
   pedido. O Google troca o modelo por trás de `gemini-flash-latest` sem aviso, e cada família aceita ajustes

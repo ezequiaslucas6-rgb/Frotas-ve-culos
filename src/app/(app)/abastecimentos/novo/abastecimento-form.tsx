@@ -1,9 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Gauge, TriangleAlert } from 'lucide-react';
-import { registrarAbastecimento } from '@/actions/abastecimentos';
+import { registrarAbastecimento, ultimoAbastecimentoDoVeiculo } from '@/actions/abastecimentos';
 import { lerCupom } from '@/actions/cupom';
 import { LeituraCupom, type EstadoLeitura } from '@/components/abastecimentos/leitura-cupom';
 import { buttonVariants } from '@/components/ui/button';
@@ -16,8 +16,9 @@ import { Input, Select, Textarea } from '@/components/ui/input';
 import { useServerForm } from '@/hooks/use-server-form';
 import { COMBUSTIVEIS, formatPrecoLitro, parseDecimalBR, type Combustivel } from '@/lib/abastecimento/consumo';
 import { calcularValores, conferirKmCupom, conferirPlaca, paraCampo, type RegistroLeitura } from '@/lib/abastecimento/cupom';
+import { referenciaDoKm, type ReferenciaKm, type UltimoAbastecimento } from '@/lib/abastecimento/referencia';
 import { addDays } from '@/lib/dates';
-import { formatBRL, formatKm, formatNumber } from '@/lib/format';
+import { formatBRL, formatDateISO, formatKm, formatNumber } from '@/lib/format';
 import { formatPlaca } from '@/lib/validators/documentos';
 
 interface VeiculoOpcao {
@@ -62,8 +63,27 @@ export function AbastecimentoForm({ veiculos, motoristas, veiculoInicial, combus
   const cupomAtual = useRef<string | null>(null);
   const veiculo = veiculos.find((v) => v.id === veiculoId);
 
+  // Referência do KM: o ÚLTIMO ABASTECIMENTO do veículo (não o KM do veículo, que também sobe com
+  // checklists). undefined = ainda carregando; null = veículo sem abastecimento anterior.
+  const [ultimos, setUltimos] = useState<Record<string, UltimoAbastecimento | null>>({});
+  const ultimosRef = useRef(ultimos);
+  useEffect(() => {
+    ultimosRef.current = ultimos;
+  }, [ultimos]);
+  useEffect(() => {
+    if (!veiculoId || veiculoId in ultimosRef.current) return;
+    let cancelado = false;
+    void ultimoAbastecimentoDoVeiculo(veiculoId)
+      .then((r) => !cancelado && r.ok && setUltimos((u) => ({ ...u, [veiculoId]: r.ultimo })))
+      .catch(() => undefined);
+    return () => {
+      cancelado = true;
+    };
+  }, [veiculoId]);
+  const referencia: ReferenciaKm | null = veiculo && veiculoId in ultimos ? referenciaDoKm(ultimos[veiculoId] ?? null, veiculo.km_atual) : null;
+
   const kmNum = km === '' ? null : Number(km);
-  const diferenca = veiculo && kmNum != null && Number.isFinite(kmNum) ? kmNum - veiculo.km_atual : null;
+  const diferenca = referencia && kmNum != null && Number.isFinite(kmNum) ? kmNum - referencia.km : null;
   const unidade = combustivel === 'gnv' ? 'm³' : 'L';
   const descontoNum = parseDecimalBR(desconto);
   const valores = calcularValores({
@@ -93,7 +113,9 @@ export function AbastecimentoForm({ veiculos, motoristas, veiculoInicial, combus
     const placa = conferirPlaca(l.placa, veiculo.placa);
     let c = placa ? { ...r.calculo, conferencias: [...r.calculo.conferencias, placa], confiavel: r.calculo.confiavel && placa.ok } : r.calculo;
     // KM impresso é digitado pelo frentista (e pode ser mal lido): só entra se combinar com o veículo
-    const kmCupom = conferirKmCupom(l.km, veiculo.km_atual);
+    // referência já carregada (ou o KM do veículo, se a consulta ainda não voltou)
+    const refCupom = referenciaDoKm(veiculo.id in ultimosRef.current ? (ultimosRef.current[veiculo.id] ?? null) : null, veiculo.km_atual);
+    const kmCupom = conferirKmCupom(l.km, refCupom.km);
     if (kmCupom.aviso) c = { ...c, avisos: [...c.avisos, kmCupom.aviso], confiavel: false };
     const preenchidos: string[] = [];
     if (c.litros) {
@@ -139,7 +161,7 @@ export function AbastecimentoForm({ veiculos, motoristas, veiculoInicial, combus
                 <p className="text-xs text-muted-foreground">{[veiculo.marca, veiculo.modelo].filter(Boolean).join(' ') || 'Veículo'}</p>
               </div>
               <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                <Gauge className="size-4" /> {formatKm(veiculo.km_atual)}
+                <Gauge className="size-4" /> {referencia ? formatKm(referencia.km) : '…'}
               </p>
             </div>
           ) : (
@@ -236,7 +258,13 @@ export function AbastecimentoForm({ veiculos, motoristas, veiculoInicial, combus
             error={fieldError('km')}
             hint={
               veiculo
-                ? `Último registrado: ${formatKm(veiculo.km_atual)}${registro?.leitura.km ? ` · no cupom: ${formatKm(registro.leitura.km)}` : ''}`
+                ? `${
+                    referencia
+                      ? referencia.origem === 'abastecimento'
+                        ? `Último abastecimento: ${formatKm(referencia.km)} (${formatDateISO(referencia.data)})`
+                        : `Sem abastecimento anterior: KM do veículo ${formatKm(referencia.km)}`
+                      : 'Buscando o último abastecimento…'
+                  }${registro?.leitura.km ? ` · no cupom: ${formatKm(registro.leitura.km)}` : ''}`
                 : undefined
             }
           >
@@ -256,8 +284,8 @@ export function AbastecimentoForm({ veiculos, motoristas, veiculoInicial, combus
             <p className="flex items-start gap-2 rounded-xl bg-warning/15 px-3.5 py-2.5 text-sm text-warning-text sm:col-span-2">
               <TriangleAlert className="mt-0.5 size-4 shrink-0" />
               {diferenca < 0
-                ? `O KM está ${formatNumber(-diferenca)} km abaixo do último registro. Confira o hodômetro.`
-                : `São ${formatNumber(diferenca)} km desde o último registro. Confira se digitou certo.`}
+                ? `O KM está ${formatNumber(-diferenca)} km abaixo do último abastecimento. Confira o hodômetro.`
+                : `São ${formatNumber(diferenca)} km desde o último abastecimento. Confira se digitou certo.`}
             </p>
           ) : null}
 
