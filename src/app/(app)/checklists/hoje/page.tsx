@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Ban, CalendarCheck, CircleCheck, Clock, ClipboardCheck, ShieldCheck, TriangleAlert } from 'lucide-react';
+import { Ban, CalendarCheck, CalendarOff, CircleCheck, Clock, ClipboardCheck, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { DecisaoDiaria } from '@/components/painel/decisao-diaria';
 import { FilialFilter } from '@/components/filial-filter';
 import { Badge } from '@/components/ui/badge';
@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState, PageHeader } from '@/components/ui/page-header';
 import { ChecklistStatusBadge } from '@/components/ui/status-badges';
 import { requireSession } from '@/lib/auth';
-import { PRAZO_DIARIO, diasDoSemanal, ehFimDeSemana, type SituacaoDiaria } from '@/lib/checklist/cobranca';
+import { PRAZO_DIARIO, descreverFolga, diasDoSemanal, ehFimDeSemana, folgaVigente, type SituacaoDiaria } from '@/lib/checklist/cobranca';
 import { horaLocal, toISODate } from '@/lib/dates';
 import { formatDateISO, formatDateTime, formatFilial } from '@/lib/format';
 import { avaliarVeiculoPainel } from '@/lib/maintenance/alerts';
@@ -25,7 +25,7 @@ const diaPorExtenso = (dia: string) => {
 };
 
 /** Ordem na lista do diário: o que pede ação primeiro. */
-const ORDEM: Record<SituacaoDiaria, number> = { decidir: 0, nao_liberado: 1, aguardando: 2, liberado: 3, feito: 4 };
+const ORDEM: Record<SituacaoDiaria, number> = { decidir: 0, nao_liberado: 1, aguardando: 2, liberado: 3, feito: 4, folga: 5 };
 
 /**
  * Rotina do supervisor: às 08:30 (horário de Pimenta Bueno) vê quais veículos fizeram o
@@ -57,13 +57,19 @@ export default async function ChecklistDeHojePage({ searchParams }: { searchPara
   const conta = (s: SituacaoDiaria) => operando.filter((v) => v.diaria === s).length;
   const feitos = conta('feito');
   const aDecidir = conta('decidir');
+  // motorista de folga hoje: nada a cobrar nem a decidir (fica fora da conta do diário)
+  const deFolga = conta('folga');
+  const emServico = operando.length - deFolga;
 
   const fimDeSemana = ehFimDeSemana(hoje);
   const { sabado, domingo } = diasDoSemanal(hoje);
   const semanalPendentes = operando.filter((v) => v.semanal === 'fazer' || v.semanal === 'atrasado');
   const semanalFeitos = operando.filter((v) => v.semanal === 'feito').length;
+  // sábado e domingo de folga: o semanal não é cobrado
+  const semanalDeFolga = operando.filter((v) => v.semanal === 'folga').length;
+  const semanalCobrados = operando.length - semanalDeFolga;
   // antes do 1º fim de semana da regra (ou veículo novo) ninguém está em falta
-  const semanalEmDia = operando.length - semanalPendentes.length;
+  const semanalEmDia = semanalCobrados - semanalPendentes.length;
 
   return (
     <div className="flex flex-col gap-6">
@@ -94,7 +100,8 @@ export default async function ChecklistDeHojePage({ searchParams }: { searchPara
         <CardHeader className="flex-row flex-wrap items-baseline justify-between gap-2">
           <CardTitle>Diário</CardTitle>
           <span className="text-sm text-muted-foreground">
-            <strong className="text-foreground">{feitos}</strong> de {operando.length} feitos
+            <strong className="text-foreground">{feitos}</strong> de {emServico} feitos
+            {deFolga > 0 ? ` · ${deFolga} de folga hoje` : ''}
           </span>
         </CardHeader>
         <CardContent>
@@ -112,7 +119,14 @@ export default async function ChecklistDeHojePage({ searchParams }: { searchPara
                       <SituacaoBadge situacao={v.diaria} />
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {[v.modelo, v.motorista_nome ?? 'sem motorista', isAdmin && !filialId ? formatFilial(v) : null].filter(Boolean).join(' · ')}
+                      {[
+                        v.modelo,
+                        v.motorista_nome ?? 'sem motorista',
+                        v.diaria === 'folga' && folgaVigente(v.motorista_folgas, hoje) ? `folga: ${descreverFolga(folgaVigente(v.motorista_folgas, hoje)!)}` : null,
+                        isAdmin && !filialId ? formatFilial(v) : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
                     </p>
                     {v.diaria === 'feito' && v.ultimo_checklist_id ? (
                       <p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
@@ -134,7 +148,7 @@ export default async function ChecklistDeHojePage({ searchParams }: { searchPara
                       <Link href={`/checklists/novo?veiculo=${v.id}&tipo=diario`} className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
                         <ClipboardCheck /> Fazer
                       </Link>
-                      <DecisaoDiaria veiculoId={v.id} decisao={v.liberacao_diaria} />
+                      {v.diaria !== 'folga' ? <DecisaoDiaria veiculoId={v.id} decisao={v.liberacao_diaria} /> : null}
                     </div>
                   ) : null}
                 </li>
@@ -157,7 +171,8 @@ export default async function ChecklistDeHojePage({ searchParams }: { searchPara
         <CardContent className="flex flex-col gap-3">
           <p className="text-sm text-muted-foreground">
             Feito no sábado ou no domingo. Sem ele, o veículo fica <strong className="text-destructive-text">não liberado</strong> de segunda
-            em diante, até fazer. {semanalEmDia} de {operando.length} em dia ({semanalFeitos} já fizeram neste ciclo).
+            em diante, até fazer. {semanalEmDia} de {semanalCobrados} em dia ({semanalFeitos} já fizeram neste ciclo).
+            {semanalDeFolga > 0 ? ` ${semanalDeFolga} com o motorista de folga no sábado e no domingo: não cobrado.` : ''}
           </p>
           {semanalPendentes.length === 0 ? (
             <p className="flex items-center gap-1.5 text-sm font-medium text-success-text">
@@ -194,6 +209,12 @@ function SituacaoBadge({ situacao }: { situacao: SituacaoDiaria }) {
       return (
         <Badge variant="success">
           <CircleCheck /> Feito
+        </Badge>
+      );
+    case 'folga':
+      return (
+        <Badge variant="secondary">
+          <CalendarOff /> Folga hoje
         </Badge>
       );
     case 'aguardando':

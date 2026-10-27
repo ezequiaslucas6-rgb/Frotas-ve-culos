@@ -40,7 +40,10 @@ fi
 
 # uma atualização por vez (a automática, deploy/auto-atualizar.sh, usa a mesma trava e avisa com FROTAS_TRAVA)
 if [[ -z ${FROTAS_TRAVA:-} ]]; then
-  exec 9>/tmp/frotas-atualizacao.lock
+  # aberta só para leitura: a trava criada pela automática (root) não pode ser aberta para escrita
+  # por outro usuário em /tmp (fs.protected_regular), mas o flock funciona do mesmo jeito
+  [[ -e /tmp/frotas-atualizacao.lock ]] || (umask 000 && : >/tmp/frotas-atualizacao.lock) 2>/dev/null || true
+  exec 9</tmp/frotas-atualizacao.lock
   flock -n 9 || falha "Já há uma atualização em andamento (a automática). Aguarde alguns minutos e rode de novo."
 fi
 
@@ -158,6 +161,39 @@ else
   aviso "Leitura automática do cupom desligada: coloque a chave do Gemini em GEMINI_API_KEY no $DIR/.env e rode de novo"
 fi
 
+# notificações no navegador (PC/Android): chaves VAPID geradas uma vez e guardadas no .env
+if ! grep -qE '^VAPID_PRIVATE_KEY=.+' .env; then
+  CHAVES="$($DOCKER run --rm node:22-alpine node -e "
+    const c=require('crypto');
+    const k=c.generateKeyPairSync('ec',{namedCurve:'prime256v1'}).privateKey.export({format:'jwk'});
+    const pub=Buffer.concat([Buffer.from([4]),Buffer.from(k.x,'base64url'),Buffer.from(k.y,'base64url')]).toString('base64url');
+    console.log(pub+' '+k.d)" 2>/dev/null || true)"
+  if [[ $CHAVES =~ ^[A-Za-z0-9_-]{87}\ [A-Za-z0-9_-]{43}$ ]]; then
+    sed -i '/^VAPID_PUBLIC_KEY=/d; /^VAPID_PRIVATE_KEY=/d' .env
+    cat >>.env <<ENVFIM
+
+# Notificações no navegador (Web Push). Geradas pelo instalador: não troque (quem já ativou teria de ativar de novo).
+VAPID_PUBLIC_KEY=${CHAVES%% *}
+VAPID_PRIVATE_KEY=${CHAVES##* }
+VAPID_SUBJECT=mailto:admin@frotas.local
+ENVFIM
+    ok "Notificações no navegador: chaves geradas (VAPID)"
+  else
+    aviso "Não consegui gerar as chaves das notificações do navegador (docker/rede). Rode o instalador de novo."
+  fi
+fi
+grep -qE '^FCM_CONTA_SERVICO_BASE64=' .env || cat >>.env <<'ENVFIM'
+
+# Notificações no APK (Firebase, gratuito): cole aqui a conta de serviço em base64.
+# Passo a passo no README ("Notificações"). Sem ela, o APK usa só o alarme do próprio celular (menos pontual).
+FCM_CONTA_SERVICO_BASE64=
+ENVFIM
+if grep -qE '^FCM_CONTA_SERVICO_BASE64=.+' .env; then
+  ok "Notificações no APK (Firebase): ligadas"
+else
+  aviso "Notificações no APK por Firebase desligadas: veja \"Notificações\" no README (o APK usa só o alarme do celular)."
+fi
+
 # ----------------------------------------------------------------------------- memória p/ o build
 MEM_MB=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
 SWAP_MB=$(awk '/SwapTotal/ {print int($2/1024)}' /proc/meminfo)
@@ -268,8 +304,22 @@ EOF
       aviso "Adicione manualmente ao Caddyfile e recarregue o Caddy:"
       printf '\n      %s {\n          reverse_proxy 127.0.0.1:%s\n      }\n\n' "$DOMINIO" "$PORTA"
       CONFIG_WEB=""
-    elif $SUDO grep -qs "^$DOMINIO {" "$CONFIG_WEB"; then
-      ok "Site já configurado no Caddy ($CONFIG_WEB)"
+    elif $SUDO grep -qs "^$DOMINIO {" "$CONFIG_WEB" || $SUDO grep -rqs "^$DOMINIO {" "$(dirname "$CONFIG_WEB")/sites" 2>/dev/null; then
+      ok "Site já configurado no Caddy"
+    elif [[ -d $(dirname "$CONFIG_WEB")/sites ]] && $SUDO grep -qE '^[[:space:]]*import[[:space:]].*/sites/' "$CONFIG_WEB"; then
+      # um arquivo por site (deploy/dividir-caddy.sh): escreve SÓ o arquivo deste site e não toca no Caddyfile principal
+      ARQ_SITE="$(dirname "$CONFIG_WEB")/sites/$DOMINIO.caddy"
+      printf '%s {\n\tencode zstd gzip\n\treverse_proxy 127.0.0.1:%s\n\theader {\n\t\tX-Content-Type-Options nosniff\n\t\tReferrer-Policy strict-origin-when-cross-origin\n\t}\n}\n' \
+        "$DOMINIO" "$PORTA" | $SUDO tee "$ARQ_SITE" >/dev/null
+      if ! $SUDO caddy validate --config "$CONFIG_WEB" --adapter caddyfile >/tmp/frotas-caddy.log 2>&1; then
+        $SUDO rm -f "$ARQ_SITE"
+        falha "A configuração do Caddy ficou inválida e o arquivo do Frotas foi removido. Detalhes: /tmp/frotas-caddy.log"
+      fi
+      ok "Site adicionado ao Caddy em $ARQ_SITE (os arquivos dos outros sites não foram tocados)"
+    elif command -v lsattr >/dev/null && $SUDO lsattr -d "$CONFIG_WEB" 2>/dev/null | awk '{print $1}' | grep -q i; then
+      aviso "O Caddyfile está TRAVADO (chattr +i) e o Frotas não está nele. Para recolocar só o Frotas:"
+      printf '\n      sudo chattr -i %s\n      (acrescente o bloco abaixo e recarregue o Caddy)\n      sudo chattr +i %s\n\n      %s {\n          reverse_proxy 127.0.0.1:%s\n      }\n\n' "$CONFIG_WEB" "$CONFIG_WEB" "$DOMINIO" "$PORTA"
+      CONFIG_WEB=""
     else
       BACKUP="$CONFIG_WEB.antes-frotas.$(date +%Y%m%d%H%M%S)"
       $SUDO cp -a "$CONFIG_WEB" "$BACKUP"
@@ -347,6 +397,13 @@ if curl -fsS -m 60 -H "Authorization: Bearer $CRON_SECRET" "http://127.0.0.1:$PO
 else
   aviso "Teste do cron falhou: confira SUPABASE_SERVICE_ROLE_KEY e a URL no .env (depois: docker compose up -d --build)."
 fi
+
+# ----------------------------------------------------------------------------- lembretes (notificações)
+msg "Lembretes das 08:00 e 08:30 (horário de Pimenta Bueno)"
+# todo minuto: o servidor decide pelo horário de Pimenta Bueno (não depende do fuso da VPS) e envia uma vez por dia
+LINHA_LEMBRETES="* * * * * curl -fsS -m 50 -H 'Authorization: Bearer $CRON_SECRET' http://127.0.0.1:$PORTA/api/cron/lembretes >/dev/null 2>&1 # frotas-lembretes"
+(crontab -l 2>/dev/null | grep -v 'frotas-lembretes' || true; echo "$LINHA_LEMBRETES") | crontab -
+ok "Agendador ligado: as notificações saem no minuto exato (08:00 motorista, 08:30 supervisor/admin)"
 
 # ----------------------------------------------------------------------------- atualização automática
 msg "Atualização automática"

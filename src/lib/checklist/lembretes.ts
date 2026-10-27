@@ -3,7 +3,7 @@
  * (horário de Pimenta Bueno) o que avisar. Funções puras.
  *
  *  - 08:00, motorista: o checklist do dia de cada veículo dele (semanal no fim de semana,
- *    semanal atrasado, ou o diário até as 08:30). Nada se já fez.
+ *    semanal atrasado, ou o diário até as 08:30). Nada se já fez ou se hoje é a folga dele.
  *  - 08:30, supervisor/admin: quantos veículos fizeram o diário e quantos esperam a decisão
  *    de liberar ou não (e os não liberados por falta do semanal).
  */
@@ -33,7 +33,7 @@ export interface VeiculoLembrete {
 /** O que avisar ao motorista às 08:00 (um aviso por veículo, só se tiver algo a fazer). */
 export function lembretesMotorista(veiculos: readonly VeiculoLembrete[]): Notificacao[] {
   return veiculos
-    .filter((v) => !v.parado)
+    .filter((v) => !v.parado && v.diaria !== 'folga')
     .flatMap((v): Notificacao[] => {
       const placa = formatPlaca(v.placa);
       if (v.semanal === 'atrasado') {
@@ -71,11 +71,13 @@ export function lembretesMotorista(veiculos: readonly VeiculoLembrete[]): Notifi
 /** Resumo para o supervisor às 08:30 (um aviso só). */
 export function lembreteSupervisor(veiculos: readonly VeiculoLembrete[]): Notificacao[] {
   const operando = veiculos.filter((v) => !v.parado);
-  if (!operando.length) return [];
-  const feitos = operando.filter((v) => v.diaria === 'feito').length;
-  const decidir = operando.filter((v) => v.diaria === 'decidir').length;
+  // motorista de folga hoje não entra na conta do diário
+  const emServico = operando.filter((v) => v.diaria !== 'folga');
   const semanal = operando.filter((v) => v.semanal === 'atrasado').length;
-  const partes = [`${feitos} de ${operando.length} veículos fizeram o checklist diário.`];
+  if (!emServico.length && !semanal) return [];
+  const feitos = emServico.filter((v) => v.diaria === 'feito').length;
+  const decidir = emServico.filter((v) => v.diaria === 'decidir').length;
+  const partes = emServico.length ? [`${feitos} de ${emServico.length} veículos fizeram o checklist diário.`] : [];
   if (decidir) partes.push(`${decidir} sem checklist: decida se estão liberados hoje.`);
   if (semanal) partes.push(`${semanal} não liberado(s) por falta do semanal.`);
   return [

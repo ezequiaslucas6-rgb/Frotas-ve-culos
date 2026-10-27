@@ -75,6 +75,11 @@ export function CobrancaChecklists({
                 {r.feitos}
                 <span className="text-sm font-normal text-muted-foreground"> de {r.total} feitos</span>
               </p>
+              {r.folga > 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  {r.folga} de folga{tipo === 'semanal' ? ' no fim de semana' : ' hoje'}: não cobrado
+                </p>
+              ) : null}
               <div className="h-1.5 overflow-hidden rounded-full bg-raised" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={`${tipoLabel(tipo)}: ${pct}% feitos`}>
                 <div className={cn('h-full rounded-full', pct === 100 ? 'bg-success' : 'bg-icone')} style={{ width: `${pct}%` }} />
               </div>

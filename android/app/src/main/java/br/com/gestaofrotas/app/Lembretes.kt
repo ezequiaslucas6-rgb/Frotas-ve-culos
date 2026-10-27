@@ -23,6 +23,8 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.time.ZoneId
 import java.time.ZonedDateTime
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 /**
@@ -32,6 +34,10 @@ import kotlin.concurrent.thread
  * Na hora, o app pergunta ao sistema (/api/lembretes, com a sessão do próprio app) o que
  * avisar: quem já fez o checklist não é incomodado. Sem internet às 08:00, o motorista
  * recebe um lembrete simples.
+ *
+ * O aviso principal é o PUSH do servidor ([FcmService]), que chega no minuto exato. Com o push
+ * registrado, este alarme vira REDE DE SEGURANÇA: dispara 3 minutos depois e só avisa se o push
+ * não chegou. Sem push (build sem Firebase), o alarme dispara na hora exata.
  */
 object Lembretes {
     const val CANAL = "lembretes"
@@ -44,11 +50,20 @@ object Lembretes {
     fun agendar(context: Context) {
         val alarmes = context.getSystemService(AlarmManager::class.java) ?: return
         val agora = ZonedDateTime.now(FUSO)
+        val atraso = if (PushRegistro.ativo(context)) PushRegistro.ATRASO_REDE_DE_SEGURANCA_MIN else 0L
         for ((momento, horario) in HORARIOS) {
-            var quando = agora.withHour(horario.first).withMinute(horario.second).withSecond(0).withNano(0)
+            var quando = agora.withHour(horario.first).withMinute(horario.second).withSecond(0).withNano(0).plusMinutes(atraso)
             if (!quando.isAfter(agora)) quando = quando.plusDays(1)
-            // inexato (o Android junta alarmes para poupar bateria): chega em poucos minutos
-            alarmes.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, quando.toInstant().toEpochMilli(), pendente(context, momento))
+            val ms = quando.toInstant().toEpochMilli()
+            val intencao = pendente(context, momento)
+            // exato: o inexato era adiado pelo Android (modo de economia) e chegava minutos depois
+            val exato = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmes.canScheduleExactAlarms()
+            try {
+                if (exato) alarmes.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, ms, intencao)
+                else alarmes.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, ms, intencao)
+            } catch (e: SecurityException) {
+                alarmes.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, ms, intencao)
+            }
         }
     }
 
@@ -112,6 +127,8 @@ object Lembretes {
             // a sessão renovada pelo sistema volta para o app (como faria o WebView)
             val novos = conexao.headerFields.filterKeys { it.equals("Set-Cookie", ignoreCase = true) }.values.flatten()
             if (novos.isNotEmpty()) guardarCookies(endereco, novos)
+            // 401, ou o redirecionamento para a tela de entrada: a sessão deste celular acabou
+            if (status == HttpURLConnection.HTTP_UNAUTHORIZED || status in 300..399) return Resposta(emptyList(), null, semLogin = true)
             if (status != HttpURLConnection.HTTP_OK) return Resposta(emptyList(), null)
             val json = JSONObject(conexao.inputStream.bufferedReader().use { it.readText() })
             val lista = json.optJSONArray("notificacoes")
@@ -129,16 +146,28 @@ object Lembretes {
         }
     }
 
-    private fun guardarCookies(url: String, cookies: List<String>) {
+    /**
+     * Grava a sessão renovada ANTES de o alarme terminar. O Supabase troca o "refresh token" a
+     * cada renovação e o antigo deixa de valer: se o novo se perdesse (o Android encerra o
+     * processo logo depois do alarme), o app voltaria com o antigo e o Supabase encerraria a
+     * sessão por reuso, e o motorista teria de entrar de novo.
+     */
+    fun guardarCookies(url: String, cookies: List<String>) {
+        val gravado = CountDownLatch(1)
         Handler(Looper.getMainLooper()).post {
-            val gerenciador = CookieManager.getInstance()
-            cookies.forEach { gerenciador.setCookie(url, it) }
-            gerenciador.flush()
+            try {
+                val gerenciador = CookieManager.getInstance()
+                cookies.forEach { gerenciador.setCookie(url, it) }
+                gerenciador.flush()
+            } finally {
+                gravado.countDown()
+            }
         }
+        gravado.await(3, TimeUnit.SECONDS) // roda fora da thread principal (sem travar o app)
     }
 
     data class Aviso(val id: String, val titulo: String, val texto: String, val url: String)
-    data class Resposta(val avisos: List<Aviso>, val papel: String?)
+    data class Resposta(val avisos: List<Aviso>, val papel: String?, val semLogin: Boolean = false)
 }
 
 /** Dispara nos horários dos lembretes e reagenda depois de reiniciar o celular ou atualizar o app. */
@@ -146,6 +175,8 @@ class LembreteReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         Lembretes.agendar(context) // o próximo (amanhã), e também após reiniciar/atualizar
         val momento = intent.getStringExtra(Lembretes.EXTRA_MOMENTO) ?: return
+        // com o push registrado este alarme é a reserva: se o push chegou, não avisa de novo
+        if (PushRegistro.ativo(context) && PushRegistro.recebeuHaPouco(context)) return
         val prefs = context.getSharedPreferences("lembretes", Context.MODE_PRIVATE)
         val cookies = runCatching { CookieManager.getInstance().getCookie(BuildConfig.APP_URL) }.getOrNull()
         val pendente = goAsync()
@@ -161,6 +192,18 @@ class LembreteReceiver : BroadcastReceiver() {
                             context.getString(R.string.lembrete_offline_titulo),
                             context.getString(R.string.lembrete_offline_texto),
                             "/meu-veiculo",
+                        )
+                    }
+                } else if (resposta.semLogin) {
+                    // saiu do app (ou a sessão foi encerrada): avisa no horário do papel dele, para não ficar sem lembrete
+                    val papel = prefs.getString("papel", null)
+                    if (papel != null && (papel == "motorista") == (momento == "0800")) {
+                        Lembretes.notificar(
+                            context,
+                            "sem-login",
+                            context.getString(R.string.lembrete_sem_login_titulo),
+                            context.getString(R.string.lembrete_sem_login_texto),
+                            "/login",
                         )
                     }
                 } else {

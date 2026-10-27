@@ -83,7 +83,7 @@ export function CnhCard({
       </CardHeader>
       <CardContent className="flex flex-col gap-5">
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
-          <Dado rotulo="Nº de registro" valor={<span className="font-mono">{motorista.cnh}</span>} />
+          <Dado rotulo="Nº de registro" valor={motorista.cnh ? <span className="font-mono">{motorista.cnh}</span> : '—'} />
           <Dado rotulo="Categoria" valor={motorista.cnh_categoria ?? '—'} />
           <Dado rotulo="Validade" valor={formatDateISO(motorista.cnh_validade)} />
           <Dado rotulo="Emissão" valor={formatDateISO(motorista.cnh_emissao)} />

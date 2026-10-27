@@ -2,6 +2,7 @@
  * Rotina dos checklists (migration 20260109): decisão diária do supervisor para veículo sem
  * checklist diário, colunas novas da view do painel e as fotos da carcaça dos retrovisores.
  */
+import { readFileSync } from 'node:fs';
 import type { PGlite } from '@electric-sql/pglite';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { criarBanco } from './banco';
@@ -125,5 +126,53 @@ describe('view do painel: último semanal e mensal', () => {
     const p = await painel(V_2);
     expect(new Date(p.ultimo_semanal_em!).toISOString()).toBe('2026-10-10T12:00:00.000Z');
     expect(new Date(p.ultimo_mensal_em!).toISOString()).toBe('2026-10-10T12:00:00.000Z');
+  });
+});
+
+describe('folga da semana (migration 20260114, no lugar dos dias fixos da 20260112)', () => {
+  const folgasNoPainel = (veiculo: string) =>
+    rows<{ motorista_folgas: string[] | null }>('select motorista_folgas::text[] as motorista_folgas from public.vw_veiculos_painel where id = $1', [veiculo]).then(
+      (r) => r[0]!.motorista_folgas,
+    );
+
+  it('os dias fixos saíram; a coluna nova e a da view existem', async () => {
+    expect(await rows(`select 1 from information_schema.columns where table_name = 'motoristas' and column_name = 'dias_folga'`)).toHaveLength(0);
+    expect(await rows(`select 1 from information_schema.columns where table_name = 'vw_veiculos_painel' and column_name = 'motorista_dias_folga'`)).toHaveLength(0);
+  });
+
+  it('sem folga por padrão; veículo sem motorista não tem folga', async () => {
+    expect(await folgasNoPainel(V_1)).toEqual([]);
+    expect(await folgasNoPainel(V_2)).toBeNull();
+  });
+
+  it('o supervisor da filial marca a folga da semana (a sexta que a abre) e o painel a entrega com o veículo', async () => {
+    await as(SUP_SP, async () => {
+      expect((await db.query(`update public.motoristas set folgas_fim_semana = '{2026-10-16}' where id = $1`, [M_1])).affectedRows).toBe(1);
+      expect(await folgasNoPainel(V_1)).toEqual(['2026-10-16']);
+    });
+  });
+
+  it('o motorista vê a própria folga, mas não a altera', async () => {
+    await as(DRV, async () => {
+      expect(await folgasNoPainel(V_1)).toEqual(['2026-10-16']);
+      expect((await db.query(`update public.motoristas set folgas_fim_semana = '{}' where id = $1`, [M_1])).affectedRows).toBe(0);
+    });
+    expect(await folgasNoPainel(V_1)).toEqual(['2026-10-16']);
+  });
+
+  it('supervisor de outra filial não altera a folga', async () => {
+    await as(SUP_RJ, async () => {
+      expect((await db.query(`update public.motoristas set folgas_fim_semana = '{}' where id = $1`, [M_1])).affectedRows).toBe(0);
+    });
+  });
+
+  it('guarda poucas folgas (limite de 60)', async () => {
+    const muitas = Array.from({ length: 61 }, (_, i) => `2027-01-${String((i % 28) + 1).padStart(2, '0')}`).join(',');
+    await expect(db.query(`update public.motoristas set folgas_fim_semana = '{${muitas}}' where id = $1`, [M_1])).rejects.toThrow(/motoristas_folgas_chk/);
+  });
+
+  it('a migration pode rodar de novo sem erro (idempotente) e a folga continua', async () => {
+    await db.exec(readFileSync(new URL('../migrations/20260114000000_folga_da_semana.sql', import.meta.url), 'utf8'));
+    expect(await folgasNoPainel(V_1)).toEqual(['2026-10-16']);
   });
 });

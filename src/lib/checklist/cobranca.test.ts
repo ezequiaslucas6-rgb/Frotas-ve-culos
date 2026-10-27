@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  descreverFolga,
   diasDoSemanal,
+  emFolga,
+  folgaVigente,
+  sextaDaSemana,
   inicioDaBusca,
   inicioDoCicloSemanal,
   periodosCobranca,
@@ -80,7 +84,7 @@ describe('situação por veículo', () => {
   it('resumo: feitos de total e a lista de pendentes', () => {
     const s = situacaoCobranca(['A', 'B', 'C'], [{ veiculo_id: 'A', tipo: 'diario', data_envio: '2026-10-15T12:00:00Z' }], hoje);
     const r = resumoCobranca(veiculos, s);
-    expect(r.diario).toEqual({ feitos: 1, total: 3, pendentes: [{ id: 'B' }, { id: 'C' }] });
+    expect(r.diario).toEqual({ feitos: 1, total: 3, pendentes: [{ id: 'B' }, { id: 'C' }], folga: 0 });
     expect(r.mensal.feitos).toBe(0);
   });
 });
@@ -115,5 +119,82 @@ describe('diário com prazo às 08:30', () => {
     expect(situacaoDiaria(true, false, '2026-10-15T15:00:00Z')).toBe('feito');
     expect(situacaoDiaria(false, true, '2026-10-15T15:00:00Z')).toBe('liberado');
     expect(situacaoDiaria(false, false, '2026-10-15T09:00:00Z')).toBe('nao_liberado');
+  });
+});
+
+describe('folga da semana (revezamento de plantão: sexta, sábado e domingo)', () => {
+  // sexta 16/10, sábado 17/10, domingo 18/10, segunda 19/10
+  const FOLGA = ['2026-10-16'];
+  const hoje = '2026-10-15';
+  const veiculos = [{ id: 'A' }, { id: 'B' }, { id: 'C' }];
+
+  it('sextaDaSemana: a sexta da semana de segunda a domingo, em qualquer dia em que se aperte o botão', () => {
+    expect(sextaDaSemana('2026-10-12')).toBe('2026-10-16'); // segunda
+    expect(sextaDaSemana('2026-10-14')).toBe('2026-10-16'); // quarta
+    expect(sextaDaSemana('2026-10-16')).toBe('2026-10-16'); // sexta
+    expect(sextaDaSemana('2026-10-17')).toBe('2026-10-16'); // sábado
+    expect(sextaDaSemana('2026-10-18')).toBe('2026-10-16'); // domingo
+    expect(sextaDaSemana('2026-10-19')).toBe('2026-10-23'); // segunda: já é a semana seguinte
+  });
+
+  it('emFolga: sexta, sábado e domingo; na segunda ele volta sozinho', () => {
+    expect(emFolga(FOLGA, '2026-10-15')).toBe(false); // quinta
+    expect(emFolga(FOLGA, '2026-10-16')).toBe(true);
+    expect(emFolga(FOLGA, '2026-10-17')).toBe(true);
+    expect(emFolga(FOLGA, '2026-10-18')).toBe(true);
+    expect(emFolga(FOLGA, '2026-10-19')).toBe(false); // segunda: voltou
+    expect(emFolga([], '2026-10-16')).toBe(false);
+    expect(emFolga(null, '2026-10-16')).toBe(false);
+  });
+
+  it('diário: no fim de semana de folga não há o que cobrar nem decidir; feito continua feito', () => {
+    // sexta 12:31Z = 08:31 em Pimenta Bueno: sem folga seria "decidir"
+    expect(situacaoDiaria(false, null, '2026-10-16T12:31:00Z')).toBe('decidir');
+    expect(situacaoDiaria(false, null, '2026-10-16T12:31:00Z', FOLGA)).toBe('folga');
+    expect(situacaoDiaria(false, false, '2026-10-17T12:31:00Z', FOLGA)).toBe('folga'); // decisão antiga não prende
+    expect(situacaoDiaria(true, null, '2026-10-17T12:31:00Z', FOLGA)).toBe('feito');
+    // segunda: o motorista voltou (sem ninguém desmarcar)
+    expect(situacaoDiaria(false, null, '2026-10-19T12:31:00Z', FOLGA)).toBe('decidir');
+    expect(situacaoDiaria(false, null, '2026-10-19T12:29:00Z', FOLGA)).toBe('aguardando');
+  });
+
+  it('diário: o dia vale no horário de Pimenta Bueno (domingo 23:00 lá ainda é folga; segunda 01:00 não)', () => {
+    expect(situacaoDiaria(false, null, '2026-10-19T03:00:00Z', FOLGA)).toBe('folga'); // dom 23:00 em Porto Velho
+    expect(situacaoDiaria(false, null, '2026-10-19T05:00:00Z', FOLGA)).not.toBe('folga'); // seg 01:00
+  });
+
+  it('semanal: o fim de semana de folga não é cobrado e o veículo não fica "não liberado" na segunda', () => {
+    expect(situacaoSemanal(false, '2026-10-17', null, FOLGA)).toBe('folga'); // sábado
+    expect(situacaoSemanal(false, '2026-10-18', null, FOLGA)).toBe('folga'); // domingo
+    expect(situacaoSemanal(false, '2026-10-19', null, FOLGA)).toBe('folga'); // segunda: seria atrasado
+    expect(situacaoSemanal(false, '2026-10-23', null, FOLGA)).toBe('folga'); // até a sexta seguinte, ainda o mesmo ciclo
+    expect(situacaoSemanal(true, '2026-10-19', null, FOLGA)).toBe('feito');
+    // o ciclo seguinte volta ao normal
+    expect(situacaoSemanal(false, '2026-10-24', null, FOLGA)).toBe('fazer');
+    expect(situacaoSemanal(false, '2026-10-26', null, FOLGA)).toBe('atrasado');
+  });
+
+  it('marcar a folga da semana seguinte não reabre o semanal do fim de semana que já passou', () => {
+    // quarta 21/10: a folga de 16–18/10 continua dispensando o ciclo que começou em 17/10
+    expect(situacaoSemanal(false, '2026-10-21', null, ['2026-10-16', '2026-10-23'])).toBe('folga');
+    // só a folga da semana que vem (23–25/10): o fim de semana passado NÃO foi de folga
+    expect(situacaoSemanal(false, '2026-10-21', null, ['2026-10-23'])).toBe('atrasado');
+  });
+
+  it('resumo: veículo dispensado não entra no total nem nos pendentes', () => {
+    const s = situacaoCobranca(['A', 'B', 'C'], [{ veiculo_id: 'A', tipo: 'diario', data_envio: '2026-10-15T12:00:00Z' }], hoje);
+    const r = resumoCobranca(veiculos, s, (v, tipo) => v.id === 'B' && tipo !== 'mensal');
+    expect(r.diario).toEqual({ feitos: 1, total: 2, pendentes: [{ id: 'C' }], folga: 1 });
+    expect(r.semanal).toMatchObject({ feitos: 0, total: 2, folga: 1 });
+    expect(r.mensal).toMatchObject({ total: 3, folga: 0 });
+  });
+
+  it('descreverFolga mostra os dias exatos; folgaVigente é a em andamento ou a próxima', () => {
+    expect(descreverFolga('2026-10-16')).toBe('sex 16/10 a dom 18/10');
+    const folgas = ['2026-10-09', '2026-10-16'];
+    expect(folgaVigente(folgas, '2026-10-12')).toBe('2026-10-16'); // segunda: a desta semana
+    expect(folgaVigente(folgas, '2026-10-18')).toBe('2026-10-16'); // domingo: ainda em andamento
+    expect(folgaVigente(folgas, '2026-10-19')).toBeNull(); // segunda: acabou
+    expect(folgaVigente(null, '2026-10-12')).toBeNull();
   });
 });

@@ -11,10 +11,20 @@
     <string name="atualizacao_atualizar">Atualizar</string>
     <string name="atualizacao_depois">Depois</string>
     <string name="atualizacao_baixando">Baixando a atualização do Rodar…</string>
+    <string name="atualizacao_instalando">Instalando a atualização…</string>
+    <string name="atualizacao_concluida_titulo">Rodar atualizado</string>
+    <string name="atualizacao_concluida_texto">Versão %1$s instalada. Toque para abrir o app.</string>
     <string name="atualizacao_falhou">Não foi possível atualizar agora. Tente mais tarde.</string>
     <string name="atualizacao_permissao">Permita que o Rodar instale a atualização e volte ao app.</string>
     <string name="lembretes_canal">Lembretes do checklist</string>
     <string name="lembretes_canal_descricao">Checklist do dia às 08:00 e, para o supervisor, o resumo das 08:30.</string>
     <string name="lembrete_offline_titulo">Bom dia! Hora do checklist</string>
     <string name="lembrete_offline_texto">Faça o checklist do veículo antes de sair (o diário até as 08:30; no sábado e no domingo, o semanal).</string>
+    <string name="lembrete_sem_login_titulo">Entre no app para receber os lembretes</string>
+    <string name="lembrete_sem_login_texto">A sessão deste celular foi encerrada. Abra o app e entre com seu e-mail e senha para continuar recebendo o lembrete do checklist.</string>
+    <string name="liberar_camera">Libere a câmera para o app: Permissões → Câmera → Permitir.</string>
+    <string name="bateria_titulo">Avisos na hora certa</string>
+    <string name="bateria_texto">Para o lembrete do checklist chegar no horário, deixe o Rodar rodar sem restrição de bateria. Toque em Permitir e confirme.</string>
+    <string name="bateria_permitir">Permitir</string>
+    <string name="bateria_depois">Agora não</string>
 </resources>

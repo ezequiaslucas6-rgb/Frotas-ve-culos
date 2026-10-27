@@ -24,9 +24,17 @@ roda na **sua VPS** em Docker, atrás do Nginx, num subdomínio com HTTPS.
    8. `20260108000000_cupom_abastecimento.sql` (valor total, desconto e leitura do cupom no abastecimento)
    9. `20260109000000_rotina_checklist.sql` (horário de Pimenta Bueno, decisão diária do supervisor, semanal
       obrigatório, foto da carcaça dos retrovisores)
+   10. `20260110000000_motorista_dados_opcionais.sql` (CPF, WhatsApp e CNH do motorista opcionais no banco, para a
+      fase de testes)
+   11. `20260111000000_ordem_fotos_checklist.sql` (ordem das fotos: externo, lado direito, lado esquerdo; interno por
+      último)
+   12. `20260112000000_motorista_folga.sql` (dias fixos de folga: a 14 troca por "folga da semana")
+   13. `20260113000000_notificacoes_push.sql` (aparelhos e disparos das notificações por push)
+   14. `20260114000000_folga_da_semana.sql` (folga da semana, no lugar dos dias fixos da 12; serve para quem rodou a 12 e
+      para quem não rodou)
 
    **Já tinha o sistema instalado?** Rode apenas o que ainda não rodou (nessa ordem, separados) e depois atualize o
-   app na VPS. Quem já está com os itens 1–8 roda só o item 9.
+   app na VPS. Quem já está com os itens 1–10 roda só os itens 11 a 14 (um por vez).
 2. Execute `supabase/seed.sql` (filiais de exemplo).
 3. **Primeiro Administrador Geral (obrigatório).** Crie o usuário em *Authentication → Users → Add user* (marque
    *Auto Confirm User*) e vincule-o como admin:
@@ -60,6 +68,17 @@ Subdomínio: `*.sslip.io` aponta sozinho para o IP do nome, sem configurar DNS. 
 
 **Logs:** `sudo docker compose -f /opt/frotas/docker-compose.yml logs -f`.
 
+**Vários sites no mesmo Caddy.** Se a VPS tem outros sites no Caddy, o `Caddyfile` único vira um ponto frágil: quem o
+sobrescreve derruba todos (aconteceu em 26 e 27/10/2026). `deploy/dividir-caddy.sh` separa o arquivo em **um por site**
+(`/etc/caddy/sites/<dominio>.caddy`), deixa o principal só com o `import` e o **trava** (`chattr +i`):
+```bash
+sudo bash dividir-caddy.sh --simular   # só mostra o que faria
+sudo bash dividir-caddy.sh             # divide, valida, recarrega e trava (volta atrás sozinho se algo falhar)
+```
+Depois, cada projeto edita **só o arquivo do próprio site**. O instalador do Frotas já entende essa estrutura (escreve só
+`sites/<dominio>.caddy`). Para mexer no principal: `sudo chattr -i /etc/caddy/Caddyfile`, edite, `sudo chattr +i ...`.
+Testes (com um Caddy simulado): `bash deploy/testes/dividir-caddy.test.sh` e `bash deploy/testes/instalar-caddy.test.sh`.
+
 ### Atualizações automáticas
 Depois da primeira instalação, ninguém precisa atualizar nada à mão:
 1. **VPS:** a cada 10 minutos (`deploy/auto-atualizar.sh`, no cron do root) ela confere o GitHub e, se há versão nova,
@@ -70,15 +89,20 @@ Depois da primeira instalação, ninguém precisa atualizar nada à mão:
 2. **Celulares e navegadores:** o app confere a versão do servidor ao voltar para a tela, ao recuperar a internet e a
    cada 10 minutos; se mudou, **recarrega sozinho**. Em tela de formulário (lançamento, checklist, cadastro) ele só
    mostra *"Nova versão do Rodar"* e atualiza ao sair dela, sem perder o que foi digitado.
-3. **APK:** só muda quando a parte Android muda (raro). O próprio app confere a versão publicada no GitHub (a cada 6 h)
-   e oferece **Atualizar**: baixa, confere o arquivo e abre o instalador do Android, que instala por cima. Na primeira
-   vez o Android pede para permitir que o Rodar instale atualizações.
+3. **APK:** só muda quando a parte Android muda (raro). Ao abrir o app (e ao voltar para ele), o Rodar confere a versão
+   publicada no GitHub e oferece **Atualizar**: baixa **dentro do app** (barra de progresso), confere o arquivo
+   (SHA-256) e instala pela sessão de instalação do Android, sem navegador nem arquivo para abrir. No Android 12 ou mais
+   novo, depois que o próprio Rodar instalou uma versão, as seguintes **instalam sem nenhuma pergunta** e o aviso
+   *Rodar atualizado* reabre o app; antes disso o Android mostra só *Atualizar este app?*. Na primeira vez o Android
+   pede para permitir que o Rodar instale atualizações. *Depois* adia a pergunta por 4 horas.
 
 | Variável (`.env`) | Uso |
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | navegador e servidor (sempre sob RLS). Embutidas no build: mudou? rode `docker compose up -d --build` |
 | `SUPABASE_SERVICE_ROLE_KEY` | **só servidor**: criar supervisores, liberar/redefinir/remover o acesso de motoristas e o cron |
-| `CRON_SECRET` | protege `/api/cron/alertas` |
+| `CRON_SECRET` | protege `/api/cron/alertas` e `/api/cron/lembretes` |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | notificações no navegador (Web Push). O instalador gera; não troque (quem ativou teria de ativar de novo) |
+| `FCM_CONTA_SERVICO_BASE64` | notificações no APK (Firebase): conta de serviço em base64. Veja *Notificações* |
 | `FROTAS_PORTA` | porta local do container (padrão 3010) |
 
 ## 3. App Android (APK)
@@ -109,15 +133,59 @@ Cadastre os 4 valores em *Settings → Secrets and variables → Actions → New
 usada. Nos celulares, desinstale o app antigo **uma última vez**; daí em diante, cada versão instala por cima.
 Guarde uma cópia de `~/rodar-chave-apk` fora da VPS e **nunca** coloque a chave no repositório (ele é público).
 
-**Lembretes no celular.** O APK avisa, no horário de Pimenta Bueno (America/Porto_Velho):
+## Notificações (lembretes do checklist)
+Horário de Pimenta Bueno (America/Porto_Velho), **na hora certa**:
 - **08:00, motorista:** o checklist do dia de cada veículo dele (o diário até as 08:30; no sábado e no domingo, o
-  semanal obrigatório; ou que o veículo está *não liberado* por falta do semanal). Quem já fez não recebe nada.
+  semanal obrigatório; ou que o veículo está *não liberado* por falta do semanal). Quem já fez, quem está de **folga** e
+  quem tem o veículo parado por avaria não recebe nada.
 - **08:30, supervisor e Administrador Geral:** quantos veículos fizeram o diário e quantos esperam a decisão de
   liberar ou não (toque abre **Checklist de hoje**).
 
-Na hora, o app pergunta ao sistema o que avisar (`/api/lembretes`, com o login do próprio app). Sem internet às 08:00,
-o motorista recebe um lembrete simples. Na primeira abertura o Android pede para permitir notificações (Android 13+).
-Os alarmes voltam sozinhos depois de reiniciar o celular.
+**Como chega na hora.** Antes, o aviso dependia do alarme do próprio celular, que o Android atrasa ou cancela para
+poupar bateria (ainda mais em Xiaomi/Redmi). Agora quem avisa é o **servidor**: um agendador na VPS roda todo minuto
+(`/api/cron/lembretes`) e, às 08:00 e às 08:30, envia o **push** para cada aparelho cadastrado, uma única vez por dia
+(tabela `push_disparos`; se a VPS estava fora do ar no minuto exato, ainda envia até 15 min depois):
+- **PC e navegador (Chrome, Edge, Firefox):** *Web Push*. Ao entrar, aparece *"Receba os avisos do checklist na hora"*;
+  toque em **Ativar notificações** (ou em **Perfil → Notificações**). Chega mesmo com a aba fechada, desde que o navegador
+  esteja aberto ou rodando em segundo plano (no Chrome: *Configurações → Sistema → Continuar executando aplicativos em
+  segundo plano*). **Perfil → Notificações → Enviar teste** confere na hora. As chaves (VAPID) o instalador gera sozinho.
+- **APK:** push do **Firebase** (gratuito), que acorda o celular na hora, mesmo com o app fechado. Precisa ser
+  configurado uma vez (abaixo). O alarme do celular continua como **reserva**: dispara 3 minutos depois e só avisa se o
+  push não chegou.
+
+Quem sai da conta (*Sair*) deixa de receber os avisos naquele aparelho. Se outra pessoa entrar no mesmo PC ou celular,
+o aparelho passa a ser dela.
+
+**Ligar o push do APK (uma vez, ~10 minutos):**
+1. Em [console.firebase.google.com](https://console.firebase.google.com) crie um projeto (ex.: *Rodar*; o Google
+   Analytics pode ficar desligado).
+2. No projeto: **Adicionar app → Android**, com o nome do pacote **`br.com.gestaofrotas.app`**. Baixe o
+   **`google-services.json`** e pule o resto do assistente.
+3. **Configurações do projeto (engrenagem) → Contas de serviço → Gerar nova chave privada**: baixa um arquivo `.json`.
+4. No GitHub: *Settings → Secrets and variables → Actions → New repository secret*, nome
+   **`GOOGLE_SERVICES_JSON_BASE64`**, valor = o `google-services.json` do passo 2 em base64
+   (`base64 -w0 google-services.json`; no Windows: `[Convert]::ToBase64String([IO.File]::ReadAllBytes("google-services.json"))`).
+5. Na VPS, coloque a conta de serviço (passo 3) em base64 em `FCM_CONTA_SERVICO_BASE64` no `/opt/frotas/.env`
+   (`base64 -w0 arquivo-da-conta.json`) e rode `bash /opt/frotas/deploy/atualizar.sh`.
+6. Gere o APK de novo (*Actions → App Android (APK) → Run workflow*), atualize o app nos celulares e abra-o logado. Em
+   **Perfil → Notificações → Enviar teste** a notificação chega em instantes.
+
+Sem os passos 1 a 6, o APK continua avisando só pelo alarme do celular (menos pontual).
+
+**Celulares Xiaomi/Redmi (HyperOS/MIUI):** o sistema encerra apps em segundo plano. Na primeira abertura o app pede para
+**não economizar bateria** (toque em *Permitir*). Também confira em *Configurações → Apps → Rodar*: **Início
+automático** ligado, **Economia de bateria → Sem restrições**, e as notificações do canal *Lembretes do checklist*
+permitidas (com a tela de bloqueio). Fixar o app nos recentes (cadeado) ajuda.
+
+Detalhe técnico: o app também pergunta ao sistema o que avisar (`/api/lembretes`, com o login do próprio app) no alarme
+de reserva. Sem internet às 08:00, o motorista recebe um lembrete simples. Na primeira abertura o Android pede para
+permitir notificações (Android 13+). Os alarmes voltam sozinhos depois de reiniciar o celular.
+
+**Login no celular.** A sessão fica salva no app e não expira sozinha: o cookie vale 400 dias e é renovado a cada uso
+(inclusive pelo lembrete das 08:00, que grava a sessão renovada antes de terminar). Ela só acaba se a pessoa tocar em
+*Sair*, se a senha for trocada, ou se o projeto do Supabase limitar as sessões (*Authentication → Sessions*:
+*Time-box user sessions* e *Inactivity timeout* devem ficar desligados, ou em 30 dias ou mais). Se a sessão acabar, o
+lembrete das 08:00 vira *Entre no app para receber os lembretes*, para o motorista não ficar sem aviso.
 
 ## 4. Desenvolvimento
 ```bash
@@ -150,6 +218,13 @@ daltonismo nos dois temas e sempre aparecem com ícone + texto.
 | Abastecimentos | todos; corrige e exclui | lê e lança da própria filial | lança nos próprios veículos; lê só os seus |
 | Exclusões | sim | não (para desligar um motorista: status *Inativo*) | não |
 
+**Cadastro de motorista na fase de testes.** Por enquanto só **nome e e-mail** são obrigatórios: CPF, WhatsApp e os
+dados da CNH podem ficar em branco ou receber números fictícios (só o formato é conferido: 11 dígitos; WhatsApp com
+DDD). O e-mail não precisa existir (ex.: `motorista1@teste.com`): ele é só o login do app. Para voltar a exigir os dados
+reais (com os dígitos verificadores do CPF e da CNH), coloque `MOTORISTA_DADOS_OBRIGATORIOS=1` no `/opt/frotas/.env` e
+rode `bash /opt/frotas/deploy/atualizar.sh`; os motoristas já cadastrados sem esses dados terão de ser completados na
+próxima edição.
+
 O isolamento é garantido no banco: RLS em todas as tabelas, FKs compostas `(veiculo_id, filial_id)` e
 `(motorista_id, filial_id)` que impedem referências entre filiais, `profiles` gravável só pelo Admin (nome e foto mudam
 por uma função que altera só esses dois campos), Storage privado por pasta de filial e view com `security_invoker`. O
@@ -171,10 +246,12 @@ Motorista com status *Inativo* perde o acesso na hora. *Remover acesso* apaga o 
 ## Abastecimentos
 
 Lançados pelo motorista (ou pelo supervisor): data, KM do hodômetro, combustível, litros, valor, tanque cheio/parcial,
-posto e **foto do cupom**. O KM do veículo é atualizado automaticamente (nunca regride) e o app recusa KM menor que o
-último registrado no mesmo dia. O **consumo (km/l)** usa o método tanque cheio a tanque cheio (parciais somam ao ciclo
-seguinte) e **só o KM digitado nos abastecimentos**: o KM do checklist nunca entra na conta (ele só serve de mínimo
-para o KM do abastecimento). Ex.: checklist com 100 km, 2 km até o posto, tanque cheio com 102 km: o ciclo vai do
+posto e **foto do cupom**. O KM do veículo é atualizado automaticamente (nunca regride). O **hodômetro do abastecimento é
+conferido com o ÚLTIMO ABASTECIMENTO do veículo** (a tela mostra *Último abastecimento: 124.500 km (12/10/2026)*), e não
+com o KM do checklist: o app recusa KM menor que o do último abastecimento no mesmo dia (retroativo é aceito) e avisa se
+a diferença passa de 3.000 km. Só um veículo **sem abastecimento anterior** parte do KM do veículo. O **consumo (km/l)**
+usa o método tanque cheio a tanque cheio (parciais somam ao ciclo seguinte) e **só o KM digitado nos abastecimentos**: o
+KM do checklist nunca entra na conta. Ex.: checklist com 100 km, 2 km até o posto, tanque cheio com 102 km: o ciclo vai do
 tanque cheio anterior até 102 km. O painel mostra o custo de **manutenção** e o de **combustível** em gráficos
 separados.
 
@@ -207,12 +284,21 @@ valor total, desconto, combustível, data e posto. A pessoa confere e registra.
   possível (números impressos duas vezes iguais, como o valor pago da DANFE, nunca são trocados). O campo corrigido
   aparece destacado (*corrigido · lido 45,35 L*) e o resumo pede *Corrigido: confira*. Se mais de um número pode
   estar errado, nada é adivinhado: a pessoa confere na foto.
-- **KM impresso** (digitado pelo frentista): só preenche o hodômetro se estiver entre o último KM do veículo e 3.000 km
+- **KM impresso** (digitado pelo frentista): só preenche o hodômetro se estiver entre o KM do último abastecimento e 3.000 km
   acima dele; fora disso, avisa e deixa para digitar (KM errado estragaria o consumo).
-- **Velocidade:** o modelo responde sem "raciocínio" (mais rápido) quando ele permite; se o Google recusar esse ajuste,
-  o sistema repete a leitura com a chamada simples e lembra disso para as próximas. Cada modelo tem no máximo 25 s
-  (40 s no total). O resumo mostra quanto levou cada etapa (*foto · envio · leitura*). Se a leitura falhar, a tela
+- **Velocidade e modelos novos:** o modelo responde com o mínimo de "raciocínio" (mais rápido) e no formato
+  pedido. O Google troca o modelo por trás de `gemini-flash-latest` sem aviso, e cada família aceita ajustes
+  diferentes (a 3.x recusa `thinkingBudget: 0`, algumas recusam `thinkingLevel: "minimal"`, e o `responseSchema`
+  virou legado). Se o Google recusar o pedido, o sistema lê a mensagem e repete com o ajuste seguinte
+  (raciocínio: `minimal` → `low` → `thinkingBudget 0` → padrão; formato: `responseSchema` → `responseJsonSchema` →
+  só JSON) e lembra do que funcionou para as próximas leituras. Se o modelo não responde em 10 s, o próximo da lista
+  começa em paralelo e vale a primeira resposta (o mais lento é cancelado); a leitura toda tem até 45 s. O
+  resumo mostra quanto levou cada etapa (*foto · envio · leitura*). Se a leitura falhar, a tela
   **Testar leitura de cupons** (Administrador Geral) mostra o motivo exato devolvido pelo Google.
+- **Resposta que não termina:** o modo JSON do Gemini às vezes "dispara" (espaços e quebras de linha sem fim). A
+  resposta tem teto de tokens; se bate nele, o sistema repete no formato seguinte.
+- **Diagnóstico na VPS:** `bash /opt/frotas/deploy/testar-gemini.sh [foto-do-cupom.jpg]` chama cada modelo de dentro do
+  container (mesma chave e rede) e mostra status, tempo, tokens e o começo da resposta.
 - Nota com outros produtos (ARLA, óleo…): usa a linha do combustível; desconto só da nota inteira é dividido
   proporcionalmente, com aviso.
 - Modelos ajustados com notas reais da frota: **NFC-e** (sistema xpert: quantidade impressa com ponto, "5.413 LT" =
@@ -225,7 +311,8 @@ valor total, desconto, combustível, data e posto. A pessoa confere e registra.
 - **Chave gratuita:** crie em [aistudio.google.com/apikey](https://aistudio.google.com/apikey), coloque em
   `GEMINI_API_KEY` no `/opt/frotas/.env` da VPS e rode o instalador. A chave fica só no servidor.
   `GEMINI_MODELOS` define a ordem dos modelos (padrão `gemini-flash-latest,gemini-flash-lite-latest`): se o limite
-  gratuito de um acabar, usa o próximo. Sem chave, sem cota ou sem internet, o lançamento é digitado à mão (as
+  gratuito de um acabar, usa o próximo. Os dois `-latest` entram sempre no fim da lista, então um modelo
+  configurado que o Google desligou não deixa a leitura parada. Sem chave, sem cota ou sem internet, o lançamento é digitado à mão (as
   contas continuam automáticas).
 - No plano gratuito, o Google pode usar as imagens enviadas para melhorar os produtos dele. Para que isso não
   aconteça, ative o faturamento no projeto da chave (plano pago).
@@ -273,18 +360,30 @@ validado na própria VPS, sem essa ida. O `deploy/diagnostico.sh` mostra qual é
 ## Checklist diário, semanal e mensal
 | Tipo | Fotos (padrão) |
 |---|---|
-| **Diário** | Exterior (frente, traseira, 2 laterais) · **Pneus** (os 4) · **Retrovisores** (os 2 espelhos e a **carcaça** de cada um, por trás) · **Motor e fluidos** (óleo, fluido de freio, água do arrefecimento) · Cabine (painel com KM, **bancos**) — 17 fotos |
+| **Diário** | Exterior (frente, traseira) · **Lado direito** (lateral, pneu dianteiro, retrovisor e a **carcaça** dele por trás, pneu traseiro) · **Lado esquerdo** (o mesmo, do outro lado) · **Motor e fluidos** (óleo, fluido de freio, água do arrefecimento) · Cabine (painel com KM, **bancos**) — 17 fotos |
 | **Semanal** | Diário + luzes, para-brisa, estepe, carroceria/porta-malas — 21 fotos |
 | **Mensal** | Semanal + compartimento do motor, equipamentos obrigatórios — 23 fotos |
 
+**Ordem das fotos:** o motorista dá a volta no veículo — primeiro tudo o que é **externo** (frente e traseira; depois o
+**lado direito** inteiro; depois o **lado esquerdo** inteiro) e, por último, o que é **interno** (motor e fluidos, cabine).
 Em todos os tipos: **"O veículo tem algum vazamento ou avaria?" Sim/Não** — no "Sim" a foto (com Atenção/Avaria e
 descrição) passa a ser obrigatória. O Administrador Geral ajusta o que cada tipo exige em **Checklists → Modelos**.
 
-Só câmera: não existe opção de galeria (no APK o campo abre a câmera direto) e fotos antigas são recusadas.
+Só câmera: não existe opção de galeria e fotos antigas são recusadas. A câmera abre **dentro da própria tela** (o app
+não sai para o app de câmera do celular): em aparelhos com pouca memória, como o Redmi 14C, o Android encerrava o app ou
+o Chrome enquanto a câmera do celular estava aberta e a foto se perdia na volta. A foto sai em até 1920 px (o envio
+reduz para 1600 px), com botão de lanterna quando o aparelho oferece. Se a câmera na tela não abrir (permissão negada
+ou APK antigo), o botão *Usar o app de câmera* abre a câmera do celular como antes. No APK, a permissão de câmera é
+pedida na primeira foto (APK 1.0.10 ou mais novo; no antigo, a tela avisa e oferece o download do app atualizado). Se a
+pessoa tiver negado de vez, o app abre as configurações dele para liberar a câmera.
 **Compressão no aparelho** (fotos de 3–12 MB viram ~300 KB), upload direto ao Storage item a item com novas tentativas,
 **pins de avaria tocando na foto**, status geral em tempo real e rascunho que sobrevive ao recarregar a página. O envio
 final é uma RPC atômica (`salvar_checklist`) que confere as fotos com o modelo do tipo e grava checklist + fotos + KM
 numa transação.
+
+**Mesma câmera no cupom e no veículo.** A foto do **cupom de abastecimento** (em resolução maior, até 2600 px, por causa
+da letra miúda da nota, com a dica *Enquadre o cupom inteiro*) e a **foto geral do veículo** também abrem a câmera
+dentro da tela, não a do celular. Se ela não abrir, o botão *Usar o app de câmera* continua disponível.
 
 **Rotina (horário de Pimenta Bueno/RO).**
 - **Diário — não é obrigatório.** O motorista faz até as **08:30**. Depois disso, o supervisor abre **Checklist de
@@ -294,6 +393,17 @@ numa transação.
 - **Semanal — obrigatório no sábado ou no domingo.** Sem ele, o veículo fica **não liberado** de segunda em diante,
   até fazer (vale a partir do fim de semana de 10/10/2026; veículo cadastrado depois do sábado só entra no próximo).
 - **Mensal:** o do mês, sem bloqueio.
+- **Folga da semana (revezamento de plantão).** No **perfil do motorista** (e na lista), ao lado do botão do WhatsApp,
+  o botão **Folga da semana** mostra os dias exatos (ex.: *sex 24/10 a dom 26/10*). Um toque marca a folga de **sexta,
+  sábado e domingo desta semana** (pode apertar de segunda a domingo: o sistema sempre usa a sexta da semana em que
+  estamos); outro toque cancela. **Acaba sozinha no domingo: na segunda o motorista volta, sem ninguém desmarcar.** Na
+  semana seguinte o botão volta desmarcado, para o próximo do revezamento. Quem está de folga:
+  - **não gera checklist diário pendente** (não entra em *decidir* nem no resumo das 08:30 e não recebe o lembrete das
+    08:00);
+  - **não deve o semanal** daquele fim de semana, e o veículo **não fica *não liberado* na segunda**.
+  Vale para os veículos que têm esse motorista como responsável; o painel, *Checklist de hoje* e *Meu veículo* mostram
+  *Folga hoje*. Se o motorista fizer o checklist mesmo assim, vale normalmente. Só supervisor da filial e Administrador
+  Geral marcam.
 
 Um checklist maior cobre os menores (o mensal vale como semanal e diário; o semanal, como diário). O painel mostra o
 quadro *Checklists* com os três e o que espera decisão; veículos parados por avaria ficam fora da cobrança até o
