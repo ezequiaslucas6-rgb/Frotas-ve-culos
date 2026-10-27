@@ -304,8 +304,22 @@ EOF
       aviso "Adicione manualmente ao Caddyfile e recarregue o Caddy:"
       printf '\n      %s {\n          reverse_proxy 127.0.0.1:%s\n      }\n\n' "$DOMINIO" "$PORTA"
       CONFIG_WEB=""
-    elif $SUDO grep -qs "^$DOMINIO {" "$CONFIG_WEB"; then
-      ok "Site já configurado no Caddy ($CONFIG_WEB)"
+    elif $SUDO grep -qs "^$DOMINIO {" "$CONFIG_WEB" || $SUDO grep -rqs "^$DOMINIO {" "$(dirname "$CONFIG_WEB")/sites" 2>/dev/null; then
+      ok "Site já configurado no Caddy"
+    elif [[ -d $(dirname "$CONFIG_WEB")/sites ]] && $SUDO grep -qE '^[[:space:]]*import[[:space:]].*/sites/' "$CONFIG_WEB"; then
+      # um arquivo por site (deploy/dividir-caddy.sh): escreve SÓ o arquivo deste site e não toca no Caddyfile principal
+      ARQ_SITE="$(dirname "$CONFIG_WEB")/sites/$DOMINIO.caddy"
+      printf '%s {\n\tencode zstd gzip\n\treverse_proxy 127.0.0.1:%s\n\theader {\n\t\tX-Content-Type-Options nosniff\n\t\tReferrer-Policy strict-origin-when-cross-origin\n\t}\n}\n' \
+        "$DOMINIO" "$PORTA" | $SUDO tee "$ARQ_SITE" >/dev/null
+      if ! $SUDO caddy validate --config "$CONFIG_WEB" --adapter caddyfile >/tmp/frotas-caddy.log 2>&1; then
+        $SUDO rm -f "$ARQ_SITE"
+        falha "A configuração do Caddy ficou inválida e o arquivo do Frotas foi removido. Detalhes: /tmp/frotas-caddy.log"
+      fi
+      ok "Site adicionado ao Caddy em $ARQ_SITE (os arquivos dos outros sites não foram tocados)"
+    elif command -v lsattr >/dev/null && $SUDO lsattr -d "$CONFIG_WEB" 2>/dev/null | awk '{print $1}' | grep -q i; then
+      aviso "O Caddyfile está TRAVADO (chattr +i) e o Frotas não está nele. Para recolocar só o Frotas:"
+      printf '\n      sudo chattr -i %s\n      (acrescente o bloco abaixo e recarregue o Caddy)\n      sudo chattr +i %s\n\n      %s {\n          reverse_proxy 127.0.0.1:%s\n      }\n\n' "$CONFIG_WEB" "$CONFIG_WEB" "$DOMINIO" "$PORTA"
+      CONFIG_WEB=""
     else
       BACKUP="$CONFIG_WEB.antes-frotas.$(date +%Y%m%d%H%M%S)"
       $SUDO cp -a "$CONFIG_WEB" "$BACKUP"

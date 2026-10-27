@@ -68,6 +68,17 @@ Subdomínio: `*.sslip.io` aponta sozinho para o IP do nome, sem configurar DNS. 
 
 **Logs:** `sudo docker compose -f /opt/frotas/docker-compose.yml logs -f`.
 
+**Vários sites no mesmo Caddy.** Se a VPS tem outros sites no Caddy, o `Caddyfile` único vira um ponto frágil: quem o
+sobrescreve derruba todos (aconteceu em 26 e 27/10/2026). `deploy/dividir-caddy.sh` separa o arquivo em **um por site**
+(`/etc/caddy/sites/<dominio>.caddy`), deixa o principal só com o `import` e o **trava** (`chattr +i`):
+```bash
+sudo bash dividir-caddy.sh --simular   # só mostra o que faria
+sudo bash dividir-caddy.sh             # divide, valida, recarrega e trava (volta atrás sozinho se algo falhar)
+```
+Depois, cada projeto edita **só o arquivo do próprio site**. O instalador do Frotas já entende essa estrutura (escreve só
+`sites/<dominio>.caddy`). Para mexer no principal: `sudo chattr -i /etc/caddy/Caddyfile`, edite, `sudo chattr +i ...`.
+Testes (com um Caddy simulado): `bash deploy/testes/dividir-caddy.test.sh` e `bash deploy/testes/instalar-caddy.test.sh`.
+
 ### Atualizações automáticas
 Depois da primeira instalação, ninguém precisa atualizar nada à mão:
 1. **VPS:** a cada 10 minutos (`deploy/auto-atualizar.sh`, no cron do root) ela confere o GitHub e, se há versão nova,
